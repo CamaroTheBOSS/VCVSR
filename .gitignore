@@ -1,0 +1,11 @@
+.idea
+__pycache__
+
+dcn/deform_conv.egg-info
+dcn/build
+dcn/deform_conv_cuda.cp*
+
+outputs/*
+venv
+wandb
+EKSPERYMENTY VCVSR.txt
