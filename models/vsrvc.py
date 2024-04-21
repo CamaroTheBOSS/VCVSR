@@ -1,4 +1,3 @@
-import glob
 import os
 import pickle
 import shutil
@@ -14,7 +13,6 @@ from models.bit_estimators import HyperpriorEntropyCoder
 from models.model_utils import make_layer, count_parameters
 from models.upscaling_decoder import UpscalingModule
 import gzip
-from kornia.augmentation import Resize
 
 from utils import save_frame
 
@@ -188,11 +186,11 @@ class VSRVCModel(nn.Module):
               )
 
     def compress(self, video: torch.Tensor, save_root: str = "./", keyframe_format="jpg"):
+        b, n, c, h, w = video.shape
         video = video.to(self.device)
         to_code = {"offsets_prior": [], "offsets_hyperprior": [], "residuals_prior": [], "residuals_hyperprior": []}
         previous_features = self.feature_extraction(video[:, 0])
-        b, n, c, h, w = video.shape
-        hqs = []
+        hqs = [self.upscaler_head(previous_features, video[:, 0])]
         for i in range(1, video.shape[1]):
             current_lqf = video[:, i]
             current_features = self.feature_extraction(current_lqf)

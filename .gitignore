@@ -6,6 +6,7 @@ dcn/build
 dcn/deform_conv_cuda.cp*
 
 outputs/*
+scripts/compressed_data
 venv
 wandb
 EKSPERYMENTY VCVSR.txt

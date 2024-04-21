@@ -56,6 +56,16 @@ def add_dict(first: dict, second: Dict[str, torch.Tensor]):
     return first
 
 
+def dict_to_string(dictionary: dict, delimiter=", "):
+    text = []
+    for key, value in dictionary.items():
+        if isinstance(value, torch.Tensor) and value.dim() == 0:
+            text.append(f"{key}: {value.item()}")
+            continue
+        text.append(f"{key}: {value}")
+    return delimiter.join(text)
+
+
 def init_run_dir(root: str, run_name: str = None) -> str:
     if run_name is None:
         run_name = str(datetime.now().timestamp())
