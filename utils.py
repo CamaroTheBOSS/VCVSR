@@ -15,15 +15,16 @@ import time
 import os
 
 
-def save_video(video: torch.Tensor, root: str, name: str = "") -> None:
-    if os.path.exists(root):
-        shutil.rmtree(root)
-    os.makedirs(root)
+def save_video(video: torch.Tensor, root: str, name: str = "vid") -> None:
+    path = os.path.join(root, name)
+    if os.path.exists(path):
+        shutil.rmtree(path)
+    os.makedirs(path)
 
     for i, frame in enumerate(video):
         numpy_frame = np.clip(frame.detach().permute(1, 2, 0).cpu().numpy() * 255., 0, 255).astype(np.uint8)
         cv_frame = cv2.cvtColor(numpy_frame, cv2.COLOR_RGB2BGR)
-        cv2.imwrite(f"{root}/{name}{(i + 1)}.png", cv_frame)
+        cv2.imwrite(f"{path}/img{(i + 1)}.png", cv_frame)
 
 
 def save_frame(filepath: str, frame: torch.Tensor):
