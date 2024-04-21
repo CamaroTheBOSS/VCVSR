@@ -188,6 +188,7 @@ class VSRVCModel(nn.Module):
               )
 
     def compress(self, video: torch.Tensor, save_root: str = "./", keyframe_format="jpg"):
+        video = video.to(self.device)
         to_code = {"offsets_prior": [], "offsets_hyperprior": [], "residuals_prior": [], "residuals_hyperprior": []}
         previous_features = self.feature_extraction(video[:, 0])
         b, n, c, h, w = video.shape
@@ -224,9 +225,9 @@ class VSRVCModel(nn.Module):
         save_frame(os.path.join(output_dir, f"keyframe.{keyframe_format}"),  video[0, 0])
         size_bytes += os.stat(os.path.join(output_dir, f"keyframe.{keyframe_format}")).st_size * 8.
 
-        return output_dir, size_bytes / (n * h * w), torch.stack(hqs)
+        return output_dir, size_bytes / (n * h * w), torch.stack(hqs).squeeze(1).unsqueeze(0)
 
-    def decompress(self, compressed_root: str, dataset, example):
+    def decompress(self, compressed_root: str):
         pkl_filenames = ["offsets_prior", "offsets_hyperprior", "residuals_prior", "residuals_hyperprior"]
         listed_files = os.listdir(compressed_root)
         pkl_files = list(filter(lambda file: any(pkl in file for pkl in pkl_filenames), listed_files))
@@ -241,10 +242,6 @@ class VSRVCModel(nn.Module):
                 decoded_data[filename[:-4]] = pickle.load(f).to(self.device)
         decoded_frames = [ToTensor()(Image.open(os.path.join(compressed_root, keyframe[0])).
                                      convert("RGB")).to(self.device).unsqueeze(0)]
-
-        lqs, _ = dataset.__getitem__(example)
-        lqs = lqs.to(self.device).unsqueeze(0)
-        decoded_frames[0] = lqs[:, 0]
         previous_features = self.feature_extraction(decoded_frames[0])
 
         for op, ohp, rp, rhp in zip(decoded_data["offsets_prior"], decoded_data["offsets_hyperprior"],
@@ -258,7 +255,7 @@ class VSRVCModel(nn.Module):
 
             reconstructed_frame = self.reconstruction_head(reconstructed_features)
             decoded_frames.append(reconstructed_frame)
-            previous_features = reconstructed_features
+            previous_features = self.feature_extraction(reconstructed_frame)
 
         return torch.stack(decoded_frames).squeeze(1).unsqueeze(0)
 
