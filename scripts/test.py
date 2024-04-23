@@ -21,8 +21,8 @@ def evaluate_model_e2e(chkpt_path: str, dataset_path: str, scale: int, examples:
                    "vc_ssim": ssim(reconstructed[0, 1:], lqs[0, 1:], aggregate="none"),
                    "vsr_psnr": psnr(upscaled[0, 1:], hqs[0, 1:], aggregate="none"),
                    "vsr_ssim": ssim(upscaled[0, 1:], hqs[0, 1:], aggregate="none")}
-        new_line = "\n"
-        print(f"[{example}]:    {dict_to_string(results, delimiter=new_line)}")
+        delimiter = "\n   "
+        print(f"[{example}]:{delimiter}{dict_to_string(results, delimiter=delimiter)}")
 
         if save_root is not None:
             save_video(reconstructed, save_root, "evaluate_model_e2e_recon")

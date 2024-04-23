@@ -59,8 +59,8 @@ def add_dict(first: dict, second: Dict[str, torch.Tensor]):
 def dict_to_string(dictionary: dict, delimiter=", "):
     text = []
     for key, value in dictionary.items():
-        if isinstance(value, torch.Tensor) and value.dim() == 0:
-            text.append(f"{key}: {value.item()}")
+        if isinstance(value, torch.Tensor):
+            text.append(f"{key}: {value.tolist()}")
             continue
         text.append(f"{key}: {value}")
     return delimiter.join(text)
