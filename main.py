@@ -16,15 +16,16 @@ from utils import init_run_dir, MetricLogger, add_dict, FileLogger, log_to_wandb
 from metrics import psnr, ssim
 
 
+@torch.no_grad()
 def evaluate_model(dataloader: DataLoader, model: nn.Module, output_dir: str):
     model.eval()
-    metric_dict = {"vc_psnr": 0, "vc_ssim": 0, "vsr_psnr": 0, "vsr_ssim": 0, "vc_bpp": 0}
+    metric_dict = {"vc_psnr": 0, "vc_ssim": 0, "vsr_psnr": 0, "vsr_ssim": 0, "vc_bpp": 0, "vc_count_nonzeros": 0}
     with torch.no_grad():
         for idx, batch in enumerate(tqdm(dataloader)):
             lqs = batch[0].to(model.device)
             hqs = batch[1].to(model.device)
 
-            reconstructed, upscaled, bpps = [], [], []
+            reconstructed, upscaled, bpps, nonzeros = [], [], [], []
             previous_frames = lqs[:, 0]
             for i in range(1, lqs.shape[1]):
                 outputs = model(previous_frames, lqs[:, i], hqs[:, i])
@@ -32,12 +33,14 @@ def evaluate_model(dataloader: DataLoader, model: nn.Module, output_dir: str):
                 upscaled.append(outputs.upscaled)
                 previous_frames = outputs.reconstructed
                 bpps.append(sum([value.item() if "bits" in key else 0 for key, value in outputs.loss_vc.items()]))
+                nonzeros.append(outputs.additional_info["count_compressed_data_non_zeros"])
 
             metric_dict["vc_psnr"] += psnr(torch.stack(reconstructed).permute(1, 0, 2, 3, 4), lqs[:, 1:]).item()
             metric_dict["vc_ssim"] += ssim(torch.stack(reconstructed).permute(1, 0, 2, 3, 4), lqs[:, 1:]).item()
             metric_dict["vsr_psnr"] += psnr(torch.stack(upscaled).permute(1, 0, 2, 3, 4), hqs[:, 1:]).item()
             metric_dict["vsr_ssim"] += ssim(torch.stack(upscaled).permute(1, 0, 2, 3, 4), hqs[:, 1:]).item()
             metric_dict["vc_bpp"] += sum(bpps) / len(bpps)
+            metric_dict["vc_count_nonzeros"] += sum(nonzeros) * len(dataloader)
 
     save_video(torch.stack(reconstructed).permute(1, 0, 2, 3, 4)[0], f"{output_dir}/compressed")
     save_video(torch.stack(upscaled).permute(1, 0, 2, 3, 4)[0], f"{output_dir}/upscaled")
@@ -78,18 +81,21 @@ def main():
     lr = 1e-4
     epochs = 15
     checkpoint = 5
-    checkpoint_path = None
-    wandb_enabled = True
-    run_name = "rate distortion = 128, MAE"
-    run_description = "MAE instead of MSE experiment for all the reconstruction losses in model"
+    rate_distortion = 2048
+    checkpoint_path = "outputs/1713858239.88169/model_15.pth"
+    wandb_enabled = False
+    run_name = f"rate_distortion={rate_distortion}"
+    run_description = (f"Sigmas were used in data_prior reconstruction. In this run sigmas are taken just from directly"
+                       f"reconstructed data hyperprior. In the next run I will do the same but with sigmas from "
+                       f"HyperpriorEncoder")
     if wandb_enabled:
         wandb.init(project="VSRVC", name=run_name)
 
     output_dir = init_run_dir("outputs")
     logger = FileLogger(output_dir, "train.log")
     logger.log(f"batch: {batch}, scale: {scale}, lr: {lr}, epochs: {epochs}, checkpoint: {checkpoint}, "
-               f"checkpoint_path: {checkpoint_path}, wandb: {wandb_enabled}, run_name: {run_name}\n"
-               f"run_description: {run_description}")
+               f"checkpoint_path: {checkpoint_path}, wandb: {wandb_enabled}, run_name: {run_name}"
+               f"rate_distortion_ratio: {rate_distortion}\nrun_description: {run_description}")
 
     torch.manual_seed(108)
     train_set = Vimeo90k("../Datasets/VIMEO90k", scale)
@@ -97,10 +103,10 @@ def main():
     train_dataloader = DataLoader(train_set, batch_size=batch, shuffle=True, drop_last=True)
     test_dataloader = DataLoader(test_set, batch_size=batch, shuffle=False, drop_last=True)
 
-    model = load_model(checkpoint_path, 128)
+    model = load_model(checkpoint_path, rate_distortion)
     model.summary()
     optimizer = AdamW(model.parameters(), lr=lr)
-    lr_scheduler = CosineAnnealingLR(optimizer, epochs * len(train_dataloader), 1 * lr)
+    lr_scheduler = CosineAnnealingLR(optimizer, epochs * len(train_dataloader), 0.01 * lr)
 
     try:
         for epoch in range(epochs):

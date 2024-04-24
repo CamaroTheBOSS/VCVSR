@@ -78,13 +78,13 @@ class HyperpriorEntropyCoder(nn.Module):
         gaussian = torch.distributions.normal.Normal(mu, sigmas)
         probs = gaussian.cdf(x + 0.5) - gaussian.cdf(x - 0.5)
         if self.training:
-            return torch.sum(torch.clamp(-1.0 * torch.log(probs + 1e-5) / math.log(2.0), 0, 50))
-        return torch.sum(torch.clamp(-1.0 * torch.log(probs) / math.log(2.0), 0, 50))
+            return torch.sum(torch.clamp(-1.0 * torch.log(probs + 1e-5) / math.log(2.0), 0, 50)), mu, sigmas
+        return torch.sum(torch.clamp(-1.0 * torch.log(probs) / math.log(2.0), 0, 50)), mu, sigmas
 
     def forward(self, data_prior: torch.Tensor, data_hyperprior: torch.Tensor, mu_sigmas: torch.Tensor):
         hyperprior_bits = self.distribution(data_hyperprior)
-        prior_bits = self.estimate_hyperprior_bits(data_prior, mu_sigmas)
-        return prior_bits, hyperprior_bits
+        prior_bits, mu, sigmas = self.estimate_hyperprior_bits(data_prior, mu_sigmas)
+        return prior_bits, hyperprior_bits, mu, sigmas
 
 
 
