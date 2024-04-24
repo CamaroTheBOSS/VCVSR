@@ -11,18 +11,18 @@ from PIL import Image
 from utils import save_video, dict_to_string
 
 
-def generate_video(chkpt_path: str, keyframe_paths: list, save_root: str = None):
+def generate_video(chkpt_path: str, keyframe1_paths: list, keyframe2_paths: list, save_root: str = None):
     model = load_model(chkpt_path)
     model.eval()
-    transform = Compose([
-        ToTensor(),
-        RandomCrop((128, 192))
-    ])
-    for path in keyframe_paths:
-        keyframe = transform(Image.open(path).convert("RGB")).to(model.device)
-        video = model.generate_video(keyframe)
+    transform = ToTensor()
+    crop = RandomCrop((128, 192), same_on_batch=True)
+    for path1, path2 in zip(keyframe1_paths, keyframe2_paths):
+        keyframe1 = transform(Image.open(path1).convert("RGB")).to(model.device)
+        keyframe2 = transform(Image.open(path2).convert("RGB")).to(model.device)
+        cropped = crop(torch.stack([keyframe1, keyframe2]))
+        video = model.generate_video_from_2_frames(cropped[0].unsqueeze(0), cropped[1].unsqueeze(0))
         if save_root is not None:
-            save_video(video[0], save_root, "generated_video_from_normal_dist")
+            save_video(video[0], save_root, "generated_video_from_2_keyframes")
 
 
 @torch.no_grad()
@@ -53,6 +53,9 @@ def evaluate_model_e2e(chkpt_path: str, dataset_path: str, scale: int, examples:
 
 if __name__ == "__main__":
     for chkpt in ["../outputs/1713890931.386187/model_15.pth"]:
+        generate_video_from_2_keyframes(chkpt, [r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\008\00000000.png"],
+                                        [r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\008\00000001.png"],
+                                        save_root="../outputs/1713890931.386187")
         generate_video(chkpt, [r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\008\00000000.png"],
                        save_root="../outputs/1713890931.386187")
         evaluate_model_e2e(chkpt, "../../Datasets/VIMEO90k", 2, [791], save_root="../outputs/1713890931.386187")

@@ -4,6 +4,7 @@ import shutil
 from dataclasses import dataclass
 
 import torch
+from torch.nn.functional import interpolate
 from torchvision.transforms import ToTensor
 from torch import nn
 from PIL import Image
@@ -102,7 +103,8 @@ class HyperpriorCompressor(nn.Module):
         quantized_data_hyperprior = self.quantize(data_hyperprior)
 
         mu_sigmas = self.hyperprior_decoder(quantized_data_hyperprior)
-        prior_bits, hyperprior_bits, _, _ = self.bit_estimator(quantized_data_prior, quantized_data_hyperprior, mu_sigmas)
+        prior_bits, hyperprior_bits, _, _ = self.bit_estimator(quantized_data_prior, quantized_data_hyperprior,
+                                                               mu_sigmas)
 
         sigmas = mu_sigmas[:, quantized_data_prior.shape[1]:]
         reconstructed_data = self.data_decoder(torch.cat([quantized_data_prior, sigmas], dim=1))
@@ -118,10 +120,13 @@ class HyperpriorCompressor(nn.Module):
 
         return quantized_data_prior, quantized_data_hyperprior
 
-    def decompress(self, quantized_data_prior: torch.Tensor, quantized_data_hyperprior: torch.Tensor):
+    def decompress(self, quantized_data_prior: torch.Tensor, quantized_data_hyperprior: torch.Tensor,
+                   return_mu_sigmas=False):
         mu_sigmas = self.hyperprior_decoder(quantized_data_hyperprior)
         sigmas = mu_sigmas[:, quantized_data_prior.shape[1]:]
         reconstructed_data = self.data_decoder(torch.cat([quantized_data_prior, sigmas], dim=1))
+        if return_mu_sigmas:
+            return reconstructed_data, mu_sigmas
         return reconstructed_data
 
 
@@ -225,7 +230,7 @@ class VSRVCModel(nn.Module):
                     data = data.to(torch.int8)
                 pickle.dump(data, f)
             size_bytes += os.stat(filepath).st_size * 8.
-        save_frame(os.path.join(output_dir, f"keyframe.{keyframe_format}"),  video[0, 0])
+        save_frame(os.path.join(output_dir, f"keyframe.{keyframe_format}"), video[0, 0])
         size_bytes += os.stat(os.path.join(output_dir, f"keyframe.{keyframe_format}")).st_size * 8.
 
         return output_dir, size_bytes / (n * h * w), torch.stack(hqs).squeeze(1).unsqueeze(0)
@@ -262,25 +267,40 @@ class VSRVCModel(nn.Module):
 
         return torch.stack(decoded_frames).squeeze(1).unsqueeze(0)
 
-    def generate_video(self, keyframe: torch.Tensor):
-        offsets_prior = torch.round(torch.nn.init.normal_(torch.zeros((6, 128, 8, 12)), 0, 10)).to(self.device)
-        offsets_hyperprior = torch.round(torch.nn.init.normal_(torch.zeros((6, 128, 2, 3)), 0, 10)).to(self.device)
-        residual_prior = torch.round(torch.nn.init.normal_(torch.zeros((6, 128, 8, 12)), 0, 10)).to(self.device)
-        residual_hyperprior = torch.round(torch.nn.init.normal_(torch.zeros((6, 128, 2, 3)), 0, 10)).to(self.device)
+    def generate_video(self, previous_frame: torch.Tensor, current_frame: torch.Tensor):
+        decoded_frames = [previous_frame, current_frame]
+        previous_features = self.feature_extraction(previous_frame)
+        current_features = self.feature_extraction(current_frame)
+        offsets = self.motion_estimator(previous_features, current_features)
+        offsets_prior, offsets_hyperprior = self.motion_compressor.compress(offsets)
+        decompressed_offsets, mu_sigmas_offsets = (
+            self.motion_compressor.decompress(offsets_prior, offsets_hyperprior, return_mu_sigmas=True)
+        )
+        aligned_features = self.motion_compensator(previous_features, decompressed_offsets)
+        residuals = current_features - aligned_features
+        residual_prior, residual_hyperprior = self.residual_compressor.compress(residuals)
+        decompressed_residuals, mu_sigmas_residuals = (
+            self.residual_compressor.decompress(residual_prior, residual_hyperprior, return_mu_sigmas=True)
+        )
+        for i in range(6):
+            mu_offsets, sigma_offsets = self.motion_compressor.bit_estimator.get_mu_sigma(mu_sigmas_offsets)
+            mu_residuals, sigma_residuals = self.residual_compressor.bit_estimator.get_mu_sigma(mu_sigmas_residuals)
+            offsets_prior = torch.normal(mu_offsets, sigma_offsets)
+            offsets_hyperprior = interpolate(torch.normal(mu_offsets, sigma_offsets),
+                                             size=(2, 3), mode="bilinear", align_corners=False)
+            residuals_prior = torch.normal(mu_residuals, sigma_residuals)
+            residuals_hyperprior = interpolate(torch.normal(mu_residuals, sigma_residuals),
+                                               size=(2, 3), mode="bilinear", align_corners=False)
 
-        decoded_frames = [keyframe]
-        previous_features = self.feature_extraction(keyframe)
-        for op, ohp, rp, rhp in zip(offsets_prior, offsets_hyperprior, residual_prior, residual_hyperprior):
-            op, ohp, rp, rhp = op.unsqueeze(0), ohp.unsqueeze(0), rp.unsqueeze(0), rhp.unsqueeze(0)
-            reconstructed_offsets = self.motion_compressor.decompress(op, ohp)
-            aligned_features = self.motion_compensator(previous_features, reconstructed_offsets)
+            reconstructed_offsets = self.motion_compressor.decompress(offsets_prior, offsets_hyperprior)
+            aligned_features = self.motion_compensator(current_features, reconstructed_offsets)
 
-            reconstructed_residuals = self.residual_compressor.decompress(rp, rhp)
+            reconstructed_residuals = self.residual_compressor.decompress(residuals_prior, residuals_hyperprior)
             reconstructed_features = reconstructed_residuals + aligned_features
 
             reconstructed_frame = self.reconstruction_head(reconstructed_features)
             decoded_frames.append(reconstructed_frame)
-            previous_features = self.feature_extraction(reconstructed_frame)
+            current_features = self.feature_extraction(reconstructed_frame)
 
         return torch.stack(decoded_frames).squeeze(1).unsqueeze(0)
 

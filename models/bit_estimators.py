@@ -30,6 +30,7 @@ class BitParam(nn.Module):
 class DirectEntropyCoder(nn.Module):
     """
     Estimate bit by directly bit prediction
+    Variational image compression with a scale hyperprior, 2017
     """
     def __init__(self, channel):
         super(DirectEntropyCoder, self).__init__()
