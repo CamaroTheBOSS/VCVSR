@@ -79,15 +79,14 @@ def main():
     batch = 16
     scale = 2
     lr = 1e-4
-    epochs = 15
+    epochs = 30
     checkpoint = 5
     rate_distortion = 2048
-    checkpoint_path = "outputs/1713858239.88169/model_15.pth"
-    wandb_enabled = False
+    checkpoint_path = None
+    wandb_enabled = True
     run_name = f"rate_distortion={rate_distortion}"
-    run_description = (f"Sigmas were used in data_prior reconstruction. In this run sigmas are taken just from directly"
-                       f"reconstructed data hyperprior. In the next run I will do the same but with sigmas from "
-                       f"HyperpriorEncoder")
+    run_description = (f"Sigmas were used in data_prior reconstruction. In this run sigmas are taken from HyperPrior"
+                       f"Encoder after adjustment")
     if wandb_enabled:
         wandb.init(project="VSRVC", name=run_name)
 

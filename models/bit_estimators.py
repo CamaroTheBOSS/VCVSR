@@ -39,7 +39,7 @@ class DirectEntropyCoder(nn.Module):
         self.f3 = BitParam(channel)
         self.f4 = BitParam(channel, True)
 
-    def distribution(self, x):
+    def cdf(self, x):
         x = self.f1(x)
         x = self.f2(x)
         x = self.f3(x)
@@ -47,7 +47,7 @@ class DirectEntropyCoder(nn.Module):
         return x
 
     def forward(self, x):
-        prob = self.distribution(x + 0.5) - self.distribution(x - 0.5)
+        prob = self.cdf(x + 0.5) - self.cdf(x - 0.5)
         if self.training:
             return torch.sum(torch.clamp(-1.0 * torch.log(prob + 1e-5) / math.log(2.0), 0, 50))
         return torch.sum(torch.clamp(-1.0 * torch.log(prob) / math.log(2.0), 0, 50))
@@ -81,6 +81,26 @@ class HyperpriorEntropyCoder(nn.Module):
         if self.training:
             return torch.sum(torch.clamp(-1.0 * torch.log(probs + 1e-5) / math.log(2.0), 0, 50)), mu, sigmas
         return torch.sum(torch.clamp(-1.0 * torch.log(probs) / math.log(2.0), 0, 50)), mu, sigmas
+
+    def sample_hyperprior(self, n_values, low=0, high=1, precise=1000, device=None):
+        """
+        Sampling function, which draws random values from learned cdf.
+        :param n_values: How many values to sample
+        :param low: Minimum value of sample (important because of cdf characteristics)
+        :param high: Maximum value of sample (important because of cdf characteristics)
+        :param precise: How precise cdf approximation should be
+        :param device: Where to store tensor
+        :return: Sampled values
+        """
+        assert n_values <= precise
+        if device is None:
+            device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        x = torch.linspace(low, high, precise, device=device)
+        cdf = self.distribution.cdf(x)[0]
+        probs = torch.rand(x.size()).to(x.device)
+        dist_indices = torch.argmin(torch.abs(probs.unsqueeze(-1) - cdf), dim=-1)
+        values = torch.gather(x.repeat(len(cdf), 1), 1, dist_indices)
+        return values[:, :n_values]
 
     def forward(self, data_prior: torch.Tensor, data_hyperprior: torch.Tensor, mu_sigmas: torch.Tensor):
         hyperprior_bits = self.distribution(data_hyperprior)

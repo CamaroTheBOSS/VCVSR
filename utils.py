@@ -77,7 +77,7 @@ def init_run_dir(root: str, run_name: str = None) -> str:
 
 
 def log_to_wandb(loss_dict: dict, metrics_dict: dict) -> None:
-    wandb.log({"loss_" + key: value for key, value in loss_dict.items()})
+    wandb.log({"loss_" + key: value for key, value in loss_dict.items()}, commit=False)
     wandb.log({"metric_" + key: value for key, value in metrics_dict.items()})
 
 

@@ -181,6 +181,11 @@ class VSRVCModel(nn.Module):
         self.reconstruction_loss = torch.nn.L1Loss()  # MSELoss
         self.rdr = rate_distortion_ratio
 
+    def to(self, device):
+        super().to(device)
+        self.device = device
+        return self
+
     def summary(self):
         print("Parameters:"
               f"    Feature extractor  : {count_parameters(self.feature_extraction)}\n"
@@ -286,11 +291,17 @@ class VSRVCModel(nn.Module):
             mu_offsets, sigma_offsets = self.motion_compressor.bit_estimator.get_mu_sigma(mu_sigmas_offsets)
             mu_residuals, sigma_residuals = self.residual_compressor.bit_estimator.get_mu_sigma(mu_sigmas_residuals)
             offsets_prior = torch.normal(mu_offsets, sigma_offsets)
-            offsets_hyperprior = interpolate(torch.normal(mu_offsets, sigma_offsets),
-                                             size=(2, 3), mode="bilinear", align_corners=False)
+            # offsets_hyperprior = interpolate(torch.normal(mu_offsets, sigma_offsets),
+            #                                  size=(2, 3), mode="bilinear", align_corners=False)
+            offsets_hyperprior = self.motion_compressor.bit_estimator.sample_hyperprior(
+                n_values=6, low=-0.1, high=0.1
+            ).reshape(offsets_hyperprior.shape)
             residuals_prior = torch.normal(mu_residuals, sigma_residuals)
-            residuals_hyperprior = interpolate(torch.normal(mu_residuals, sigma_residuals),
-                                               size=(2, 3), mode="bilinear", align_corners=False)
+            # residuals_hyperprior = interpolate(torch.normal(mu_residuals, sigma_residuals),
+            #                                    size=(2, 3), mode="bilinear", align_corners=False)
+            residuals_hyperprior = self.residual_compressor.bit_estimator.sample_hyperprior(
+                n_values=6, low=-0.1, high=0.1
+            ).reshape(offsets_hyperprior.shape)
 
             reconstructed_offsets = self.motion_compressor.decompress(offsets_prior, offsets_hyperprior)
             aligned_features = self.motion_compensator(current_features, reconstructed_offsets)
