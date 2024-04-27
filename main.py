@@ -12,7 +12,8 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from datasets import Vimeo90k
 from models.vsrvc import load_model
-from utils import init_run_dir, MetricLogger, add_dict, FileLogger, log_to_wandb, save_video, save_checkpoint
+from utils import init_run_dir, MetricLogger, add_dict, FileLogger, log_to_wandb, save_video, save_checkpoint, \
+    MyCosineAnnealingLR
 from metrics import psnr, ssim
 
 
@@ -84,9 +85,8 @@ def main():
     rate_distortion = 2048
     checkpoint_path = None
     wandb_enabled = True
-    run_name = f"rate_distortion={rate_distortion}"
-    run_description = (f"Sigmas were used in data_prior reconstruction. In this run sigmas are taken from HyperPrior"
-                       f"Encoder after adjustment")
+    run_name = f"Baseline {rate_distortion}"
+    run_description = (f"Baseline for experiments. Will be used as a reference. It has augmentation turned off\n")
     if wandb_enabled:
         wandb.init(project="VSRVC", name=run_name)
 
@@ -94,7 +94,7 @@ def main():
     logger = FileLogger(output_dir, "train.log")
     logger.log(f"batch: {batch}, scale: {scale}, lr: {lr}, epochs: {epochs}, checkpoint: {checkpoint}, "
                f"checkpoint_path: {checkpoint_path}, wandb: {wandb_enabled}, run_name: {run_name}"
-               f"rate_distortion_ratio: {rate_distortion}\nrun_description: {run_description}")
+               f"rate_distortion_ratio: {rate_distortion}\n\nRUN DESCRIPTION: \n{run_description}")
 
     torch.manual_seed(108)
     train_set = Vimeo90k("../Datasets/VIMEO90k", scale)
@@ -105,7 +105,7 @@ def main():
     model = load_model(checkpoint_path, rate_distortion)
     model.summary()
     optimizer = AdamW(model.parameters(), lr=lr)
-    lr_scheduler = CosineAnnealingLR(optimizer, epochs * len(train_dataloader), 0.01 * lr)
+    lr_scheduler = MyCosineAnnealingLR(optimizer, epochs * len(train_dataloader), 0.01 * lr, starting_point=0.5)
 
     try:
         for epoch in range(epochs):

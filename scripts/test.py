@@ -1,4 +1,5 @@
 import os
+import pathlib
 import random
 
 import torch
@@ -112,12 +113,11 @@ def evaluate_model_e2e(chkpt_path: str, dataset_path: str, scale: int, examples:
 
 if __name__ == "__main__":
     for chkpt in ["../outputs/1713890931.386187/model_15.pth"]:
+        save_root = str(pathlib.Path(chkpt).parent)
+        first_keyframe = r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\008\00000000.png"
+        second_keyframe = r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\008\00000001.png"
         # draw_model_distributions(chkpt)
-        evaluate_model_e2e(chkpt, "../../Datasets/VIMEO90k", 2, [791],
-                           save_root="../outputs/1713890931.386187", keyframe_format="jpg")
-        # generate_video(chkpt, [r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\008\00000000.png"],
-        #                [r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\008\00000001.png"],
-        #                save_root="../outputs/1713890931.386187", seed=1)
-        # decompress_video_different_keyframe(chkpt, "../../Datasets/VIMEO90k", 2,
-        #                                     r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\008\00000000.png",
-        #                                     [123], save_root="../outputs/1713890931.386187")
+        evaluate_model_e2e(chkpt, "../../Datasets/VIMEO90k", 2, [791], save_root=save_root, keyframe_format="jpg")
+        generate_video(chkpt, [first_keyframe], [second_keyframe], save_root=save_root)
+        decompress_video_different_keyframe(chkpt, "../../Datasets/VIMEO90k", 2, first_keyframe, [123],
+                                            save_root=save_root)

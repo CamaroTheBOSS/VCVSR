@@ -84,12 +84,6 @@ class HyperpriorCompressor(nn.Module):
         self.bit_estimator = HyperpriorEntropyCoder(mid_channels)
         self.mid_channels = mid_channels
 
-        # self.init_weights()
-
-    # def init_weights(self):
-    #     torch.nn.init.xavier_normal_(self.conv1.weight.data, (math.sqrt(2 * (2 + 64) / (4))))
-    #     torch.nn.init.constant_(self.conv1.bias.data, 0.01)
-
     def quantize(self, x: torch.Tensor):
         if self.training:
             return x + torch.nn.init.uniform_(torch.zeros_like(x), -0.5, 0.5)
