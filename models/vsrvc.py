@@ -60,7 +60,7 @@ class HyperpriorCompressor(nn.Module):
             nn.Conv2d(mid_channels, mid_channels, 5, stride=2, padding=2),
         ])
         self.data_decoder = nn.Sequential(*[
-            nn.ConvTranspose2d(2 * mid_channels, mid_channels, 5, stride=2, padding=2, output_padding=1),
+            nn.ConvTranspose2d(3 * mid_channels, mid_channels, 5, stride=2, padding=2, output_padding=1),
             make_layer(ResidualBlockNoBN, 2, **dict(channels=mid_channels)),
             nn.ConvTranspose2d(mid_channels, mid_channels, 5, stride=2, padding=2, output_padding=1),
             make_layer(ResidualBlockNoBN, 2, **dict(channels=mid_channels)),
@@ -100,8 +100,8 @@ class HyperpriorCompressor(nn.Module):
         prior_bits, hyperprior_bits, _, _ = self.bit_estimator(quantized_data_prior, quantized_data_hyperprior,
                                                                mu_sigmas)
 
-        sigmas = mu_sigmas[:, quantized_data_prior.shape[1]:]
-        reconstructed_data = self.data_decoder(torch.cat([quantized_data_prior, sigmas], dim=1))
+        # sigmas = mu_sigmas[:, quantized_data_prior.shape[1]:]
+        reconstructed_data = self.data_decoder(torch.cat([quantized_data_prior, mu_sigmas], dim=1))
         count_nonzeros = torch.count_nonzero(quantized_data_prior) + torch.count_nonzero(quantized_data_hyperprior)
         return reconstructed_data, prior_bits, hyperprior_bits, count_nonzeros
 
@@ -117,8 +117,8 @@ class HyperpriorCompressor(nn.Module):
     def decompress(self, quantized_data_prior: torch.Tensor, quantized_data_hyperprior: torch.Tensor,
                    return_mu_sigmas=False):
         mu_sigmas = self.hyperprior_decoder(quantized_data_hyperprior)
-        sigmas = mu_sigmas[:, quantized_data_prior.shape[1]:]
-        reconstructed_data = self.data_decoder(torch.cat([quantized_data_prior, sigmas], dim=1))
+        # sigmas = mu_sigmas[:, quantized_data_prior.shape[1]:]
+        reconstructed_data = self.data_decoder(torch.cat([quantized_data_prior, mu_sigmas], dim=1))
         if return_mu_sigmas:
             return reconstructed_data, mu_sigmas
         return reconstructed_data
@@ -196,8 +196,13 @@ class VSRVCModel(nn.Module):
         b, n, c, h, w = video.shape
         video = video.to(self.device)
         to_code = {"offsets_prior": [], "offsets_hyperprior": [], "residuals_prior": [], "residuals_hyperprior": []}
-        previous_features = self.feature_extraction(video[:, 0])
-        hqs = [self.upscaler_head(previous_features, video[:, 0])]
+        current_features = self.feature_extraction(video[:, 0])
+        previous_features = current_features
+        offsets = self.motion_estimator(previous_features, current_features)
+        offsets_prior, offsets_hyperprior = self.motion_compressor.compress(offsets)
+        decompressed_offsets = self.motion_compressor.decompress(offsets_prior, offsets_hyperprior)
+        aligned_features = self.motion_compensator(previous_features, decompressed_offsets)
+        hqs = [self.upscaler_head(aligned_features, video[:, 0])]
         for i in range(1, video.shape[1]):
             current_lqf = video[:, i]
             current_features = self.feature_extraction(current_lqf)
@@ -285,16 +290,12 @@ class VSRVCModel(nn.Module):
             mu_offsets, sigma_offsets = self.motion_compressor.bit_estimator.get_mu_sigma(mu_sigmas_offsets)
             mu_residuals, sigma_residuals = self.residual_compressor.bit_estimator.get_mu_sigma(mu_sigmas_residuals)
             offsets_prior = torch.normal(mu_offsets, sigma_offsets)
-            # offsets_hyperprior = interpolate(torch.normal(mu_offsets, sigma_offsets),
-            #                                  size=(2, 3), mode="bilinear", align_corners=False)
             offsets_hyperprior = self.motion_compressor.bit_estimator.sample_hyperprior(
-                n_values=6, low=-0.1, high=0.1
+                n_values=6, low=-25, high=25, precision=3000
             ).reshape(offsets_hyperprior.shape)
             residuals_prior = torch.normal(mu_residuals, sigma_residuals)
-            # residuals_hyperprior = interpolate(torch.normal(mu_residuals, sigma_residuals),
-            #                                    size=(2, 3), mode="bilinear", align_corners=False)
             residuals_hyperprior = self.residual_compressor.bit_estimator.sample_hyperprior(
-                n_values=6, low=-0.1, high=0.1
+                n_values=6, low=-25, high=25, precision=3000
             ).reshape(offsets_hyperprior.shape)
 
             reconstructed_offsets = self.motion_compressor.decompress(offsets_prior, offsets_hyperprior)

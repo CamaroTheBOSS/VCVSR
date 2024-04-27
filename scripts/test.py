@@ -25,14 +25,14 @@ def draw_model_distributions(chkpt_path: str):
     model = load_model(chkpt_path)
     model.eval()
 
-    x = torch.linspace(-0.1, 0.1, 1000).to(model.device)
+    x = torch.linspace(-25, 25, 3000).to(model.device)
     outputs = model.residual_compressor.bit_estimator.distribution.cdf(x)
     sampled = sample(outputs[0, :], x)
 
     for idx in range(128):
-        hist = torch.histogram(sampled[idx].detach().cpu(), bins=20).hist
-        hist = (hist - hist.min()) / (hist.max() - hist.min())
-        bins = torch.linspace(-0.1, 0.1, 20)
+        hg = torch.histogram(sampled[idx].detach().cpu(), bins=20, density=True)
+        hist = (hg.hist - hg.hist.min()) / (hg.hist.max() - hg.hist.min())
+        bins = hg.bin_edges[1:]
         plt.plot(bins.detach().numpy(), hist.numpy())
         plt.plot(x.detach().cpu().numpy(), outputs[0, idx, 0].detach().cpu().numpy())
         plt.show()
@@ -112,12 +112,12 @@ def evaluate_model_e2e(chkpt_path: str, dataset_path: str, scale: int, examples:
 
 
 if __name__ == "__main__":
-    for chkpt in ["../outputs/1713890931.386187/model_15.pth"]:
+    for chkpt in ["../outputs/1714107543.464609/model_30.pth"]:
         save_root = str(pathlib.Path(chkpt).parent)
         first_keyframe = r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\008\00000000.png"
         second_keyframe = r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\008\00000001.png"
         # draw_model_distributions(chkpt)
         evaluate_model_e2e(chkpt, "../../Datasets/VIMEO90k", 2, [791], save_root=save_root, keyframe_format="jpg")
         generate_video(chkpt, [first_keyframe], [second_keyframe], save_root=save_root)
-        decompress_video_different_keyframe(chkpt, "../../Datasets/VIMEO90k", 2, first_keyframe, [123],
+        decompress_video_different_keyframe(chkpt, "../../Datasets/VIMEO90k", 2, first_keyframe, [436],
                                             save_root=save_root)

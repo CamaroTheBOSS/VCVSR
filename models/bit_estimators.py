@@ -82,7 +82,7 @@ class HyperpriorEntropyCoder(nn.Module):
             return torch.sum(torch.clamp(-1.0 * torch.log(probs + 1e-5) / math.log(2.0), 0, 50)), mu, sigmas
         return torch.sum(torch.clamp(-1.0 * torch.log(probs) / math.log(2.0), 0, 50)), mu, sigmas
 
-    def sample_hyperprior(self, n_values, low=0, high=1, precise=1000, device=None):
+    def sample_hyperprior(self, n_values, low=0, high=1, precision=1000, device=None):
         """
         Sampling function, which draws random values from learned cdf.
         :param n_values: How many values to sample
@@ -92,10 +92,10 @@ class HyperpriorEntropyCoder(nn.Module):
         :param device: Where to store tensor
         :return: Sampled values
         """
-        assert n_values <= precise
+        assert n_values <= precision
         if device is None:
             device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        x = torch.linspace(low, high, precise, device=device)
+        x = torch.linspace(low, high, precision, device=device)
         cdf = self.distribution.cdf(x)[0]
         probs = torch.rand(x.size()).to(x.device)
         dist_indices = torch.argmin(torch.abs(probs.unsqueeze(-1) - cdf), dim=-1)
