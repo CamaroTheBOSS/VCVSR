@@ -77,6 +77,8 @@ def train_epoch(dataloader: DataLoader, model: nn.Module, optimizer: Optimizer, 
 
 
 def main():
+    torch.manual_seed(777)
+    torch.cuda.manual_seed(777)
     batch = 16
     scale = 2
     lr = 1e-4
@@ -86,7 +88,7 @@ def main():
     checkpoint_path = None
     wandb_enabled = True
     run_name = f"Baseline {rate_distortion}"
-    run_description = (f"Baseline for experiments. Will be used as a reference. It has augmentation turned off\n")
+    run_description = f"Baseline for experiments. Will be used as a reference. It has augmentation turned off\n"
     if wandb_enabled:
         wandb.init(project="VSRVC", name=run_name)
 
@@ -94,16 +96,15 @@ def main():
     logger = FileLogger(output_dir, "train.log")
     logger.log(f"batch: {batch}, scale: {scale}, lr: {lr}, epochs: {epochs}, checkpoint: {checkpoint}, "
                f"checkpoint_path: {checkpoint_path}, wandb: {wandb_enabled}, run_name: {run_name}"
-               f"rate_distortion_ratio: {rate_distortion}\n\nRUN DESCRIPTION: \n{run_description}")
+               f"rate_distortion_ratio: {rate_distortion}\n\nRUN DESCRIPTION: \n{run_description}\n")
 
-    torch.manual_seed(108)
     train_set = Vimeo90k("../Datasets/VIMEO90k", scale)
     test_set = Vimeo90k("../Datasets/VIMEO90k", scale, test_mode=True)
     train_dataloader = DataLoader(train_set, batch_size=batch, shuffle=True, drop_last=True)
     test_dataloader = DataLoader(test_set, batch_size=batch, shuffle=False, drop_last=True)
 
     model = load_model(checkpoint_path, rate_distortion)
-    model.summary()
+    logger.log(model.summary())
     optimizer = AdamW(model.parameters(), lr=lr)
     lr_scheduler = MyCosineAnnealingLR(optimizer, epochs * len(train_dataloader), 0.01 * lr, starting_point=0.5)
 

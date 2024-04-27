@@ -181,16 +181,17 @@ class VSRVCModel(nn.Module):
         return self
 
     def summary(self):
-        print("Parameters:"
-              f"    Feature extractor  : {count_parameters(self.feature_extraction)}\n"
-              f"    Motion estimator   : {count_parameters(self.motion_estimator)}\n"
-              f"    Motion compressor  : {count_parameters(self.motion_compressor)}\n"
-              f"    Motion compensator : {count_parameters(self.motion_compensator)}\n"
-              f"    Residual compressor: {count_parameters(self.residual_compressor)}\n"
-              f"    Reconstruction head: {count_parameters(self.reconstruction_head)}\n"
-              f"    Upscaler head      : {count_parameters(self.upscaler_head)}\n"
+        txt = "Parameters:" \
+              f"    Feature extractor  : {count_parameters(self.feature_extraction)}\n" \
+              f"    Motion estimator   : {count_parameters(self.motion_estimator)}\n" \
+              f"    Motion compressor  : {count_parameters(self.motion_compressor)}\n" \
+              f"    Motion compensator : {count_parameters(self.motion_compensator)}\n" \
+              f"    Residual compressor: {count_parameters(self.residual_compressor)}\n" \
+              f"    Reconstruction head: {count_parameters(self.reconstruction_head)}\n" \
+              f"    Upscaler head      : {count_parameters(self.upscaler_head)}\n" \
               f"    TOTAL              : {count_parameters(self)}\n"
-              )
+        print(txt)
+        return txt
 
     def compress(self, video: torch.Tensor, save_root: str = "./", keyframe_format="jpg"):
         b, n, c, h, w = video.shape
