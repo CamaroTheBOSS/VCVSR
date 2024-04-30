@@ -117,7 +117,6 @@ class HyperpriorCompressor(nn.Module):
     def decompress(self, quantized_data_prior: torch.Tensor, quantized_data_hyperprior: torch.Tensor,
                    return_mu_sigmas=False):
         mu_sigmas = self.hyperprior_decoder(quantized_data_hyperprior)
-        # sigmas = mu_sigmas[:, quantized_data_prior.shape[1]:]
         reconstructed_data = self.data_decoder(torch.cat([quantized_data_prior, mu_sigmas], dim=1))
         if return_mu_sigmas:
             return reconstructed_data, mu_sigmas

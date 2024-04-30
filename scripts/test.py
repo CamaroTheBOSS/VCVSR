@@ -1,16 +1,17 @@
+import glob
 import os
 import pathlib
 import random
 
 import torch
-from kornia.augmentation import RandomCrop
+from kornia.augmentation import RandomCrop, Resize
 from torchvision.transforms import ToTensor
 
 from datasets import Vimeo90k
 from metrics import psnr, ssim
 from models.vsrvc import load_model
 from PIL import Image
-from utils import save_video, dict_to_string
+from utils import save_video, dict_to_string, save_frame
 import matplotlib.pyplot as plt
 
 
@@ -111,13 +112,39 @@ def evaluate_model_e2e(chkpt_path: str, dataset_path: str, scale: int, examples:
             save_video(upscaled[0], save_root, "evaluate_model_e2e_upscale")
 
 
+@torch.no_grad()
+def evaluate_upscaled_consistency(chkpt_path: str, path_to_video: str):
+    model = load_model(chkpt_path)
+    model.eval()
+
+    video = []
+    paths = glob.glob(f"{path_to_video}/*.png")
+    transform = ToTensor()
+    for path in paths:
+        video.append(transform(Image.open(path).convert("RGB")))
+    hqs = torch.stack(video)[:, :, :640]
+    n, c, h, w = hqs.shape
+    lqs = Resize((int(h / 2), int(w / 2)))(hqs)
+    lqs, hqs = lqs.to(model.device).unsqueeze(0), hqs.to(model.device).unsqueeze(0)
+    data_root, bpp, upscaled = model.compress(lqs, keyframe_format="png")
+
+    col = torch.randint(0, upscaled.shape[-1] - 1, ()).item()
+    original = hqs[0, :, :, :, col].permute(1, 2, 0)
+    prediction = upscaled[0, :, :, :, col].permute(1, 2, 0)
+    save_frame("original.png", original)
+    save_frame(f"prediction{col}.png", prediction)
+    save_video(upscaled[0], ".", "reds")
+
+
+
 if __name__ == "__main__":
-    for chkpt in ["../outputs/1714107543.464609/model_30.pth"]:
+    for chkpt in ["../outputs/baseline2048/model_30.pth"]:
         save_root = str(pathlib.Path(chkpt).parent)
         first_keyframe = r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\008\00000000.png"
         second_keyframe = r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\008\00000001.png"
+        evaluate_upscaled_consistency(chkpt, r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\174")
         # draw_model_distributions(chkpt)
-        evaluate_model_e2e(chkpt, "../../Datasets/VIMEO90k", 2, [791], save_root=save_root, keyframe_format="jpg")
-        generate_video(chkpt, [first_keyframe], [second_keyframe], save_root=save_root)
-        decompress_video_different_keyframe(chkpt, "../../Datasets/VIMEO90k", 2, first_keyframe, [436],
-                                            save_root=save_root)
+        # evaluate_model_e2e(chkpt, "../../Datasets/VIMEO90k", 2, [791], save_root=save_root, keyframe_format="jpg")
+        # generate_video(chkpt, [first_keyframe], [second_keyframe], save_root=save_root)
+        # decompress_video_different_keyframe(chkpt, "../../Datasets/VIMEO90k", 2, first_keyframe, [436],
+        #                                     save_root=save_root)

@@ -84,7 +84,7 @@ def main():
     lr = 1e-4
     epochs = 30
     checkpoint = 5
-    rate_distortion = 2048
+    rate_distortion = 128
     checkpoint_path = None
     wandb_enabled = True
     run_name = f"Baseline {rate_distortion}"
