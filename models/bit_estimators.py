@@ -74,7 +74,7 @@ class HyperpriorEntropyCoder(nn.Module):
         mu_sigmas = self.mu_sigma_adjuster(mu_sigmas)
         return mu_sigmas[:, :self.channels], mu_sigmas[:, self.channels:].pow(2).clamp(1e-5, 1e10)
 
-    def estimate_hyperprior_bits(self, x, mu_sigmas):
+    def estimate_prior_bits(self, x, mu_sigmas):
         mu, sigmas = self.get_mu_sigma(mu_sigmas)
         gaussian = torch.distributions.normal.Normal(mu, sigmas)
         probs = gaussian.cdf(x + 0.5) - gaussian.cdf(x - 0.5)
@@ -104,7 +104,7 @@ class HyperpriorEntropyCoder(nn.Module):
 
     def forward(self, data_prior: torch.Tensor, data_hyperprior: torch.Tensor, mu_sigmas: torch.Tensor):
         hyperprior_bits = self.distribution(data_hyperprior)
-        prior_bits, mu, sigmas = self.estimate_hyperprior_bits(data_prior, mu_sigmas)
+        prior_bits, mu, sigmas = self.estimate_prior_bits(data_prior, mu_sigmas)
         return prior_bits, hyperprior_bits, mu, sigmas
 
 
