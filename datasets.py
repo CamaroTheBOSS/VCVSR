@@ -62,3 +62,42 @@ class Vimeo90k(Dataset):
 
     def __len__(self) -> int:
         return len(self.videos)
+
+
+class UVGDataset(Dataset):
+    def __init__(self, root: str, scale: int, max_frames: int = 100, crop_size: Tuple[int, int] = (1024, 1980)):
+        super().__init__()
+        self.root = root
+
+        self.scale = scale
+        self.max_frames = max_frames
+        self.crop_size = crop_size
+        self.videos = self.load_paths()
+        self.transform = Compose([ToTensor()])
+
+        assert os.path.exists(self.root)
+
+    def load_paths(self):
+        videos = []
+        for video in os.listdir(self.root):
+            frame_paths = glob(os.path.join(self.root, video, "*.png"))
+            frame_paths = frame_paths[:min(len(frame_paths), self.max_frames)]
+            videos.append([path for path in frame_paths])
+        return videos
+
+    def read_video(self, index):
+        video = []
+        for path in self.videos[index]:
+            video.append(self.transform(Image.open(path).convert("RGB")))
+        return torch.stack(video)
+
+    def __getitem__(self, index: int):
+        video = self.read_video(index)
+        hqs = video[:, :, :self.crop_size[0], :self.crop_size[1]]
+        n, c, h, w = hqs.shape
+        lqs = Resize((int(h / self.scale), int(w / self.scale)))(hqs)
+
+        return lqs, hqs
+
+    def __len__(self) -> int:
+        return len(self.videos)

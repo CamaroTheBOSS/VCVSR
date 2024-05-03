@@ -5,9 +5,10 @@ import random
 
 import torch
 from kornia.augmentation import RandomCrop, Resize
+from torch import nn
 from torchvision.transforms import ToTensor
 
-from datasets import Vimeo90k
+from datasets import Vimeo90k, UVGDataset
 from metrics import psnr, ssim
 from models.vsrvc import load_model
 from PIL import Image
@@ -22,10 +23,8 @@ def sample(cdf, x):
     return values
 
 
-def draw_model_distributions(chkpt_path: str):
-    model = load_model(chkpt_path)
-    model.eval()
-
+@torch.no_grad()
+def draw_model_distributions(model: nn.Module):
     x = torch.linspace(-25, 25, 3000).to(model.device)
     outputs = model.residual_compressor.bit_estimator.distribution.cdf(x)
     sampled = sample(outputs[0, :], x)
@@ -39,12 +38,8 @@ def draw_model_distributions(chkpt_path: str):
         plt.show()
 
 
-def generate_video(chkpt_path: str, keyframe1_paths: list, keyframe2_paths: list, save_root: str = None, seed=None):
-    if seed is not None:
-        torch.manual_seed(seed)
-        torch.cuda.manual_seed(seed)
-    model = load_model(chkpt_path)
-    model.eval()
+@torch.no_grad()
+def eval_generation(model: nn.Module, keyframe1_paths: list, keyframe2_paths: list, save_root: str = None):
     transform = ToTensor()
     crop = RandomCrop((128, 192), same_on_batch=True)
     for path1, path2 in zip(keyframe1_paths, keyframe2_paths):
@@ -57,11 +52,8 @@ def generate_video(chkpt_path: str, keyframe1_paths: list, keyframe2_paths: list
 
 
 @torch.no_grad()
-def decompress_video_different_keyframe(chkpt_path: str, dataset_path: str, scale: int, another_keyframe: str,
-                                        examples: list = None, save_root: str = None):
-    dataset = Vimeo90k(dataset_path, scale, test_mode=True)
-    model = load_model(chkpt_path)
-    model.eval()
+def eval_replaced_keyframe(model: nn.Module, dataset, another_keyframe: str,
+                           examples: list = None, save_root: str = None):
     if examples is None:
         examples = [random.randint(0, len(dataset))]
     for example in examples:
@@ -72,8 +64,9 @@ def decompress_video_different_keyframe(chkpt_path: str, dataset_path: str, scal
 
         keyframe = Image.open(another_keyframe).convert("RGB")
 
-        y1, x1 = torch.randint(0, keyframe.height - 128, ()).item(), torch.randint(0, keyframe.width - 192, ()).item()
-        keyframe = keyframe.crop((x1, y1, x1 + 192, y1 + 128))
+        h, w = lqs.shape[-2:]
+        y1, x1 = torch.randint(0, keyframe.height - h, ()).item(), torch.randint(0, keyframe.width - w, ()).item()
+        keyframe = keyframe.crop((x1, y1, x1 + w, y1 + h))
         keyframe.save(os.path.join(data_root, "keyframe.png"))
         reconstructed_another_keyframe = model.decompress(data_root)
 
@@ -83,11 +76,8 @@ def decompress_video_different_keyframe(chkpt_path: str, dataset_path: str, scal
 
 
 @torch.no_grad()
-def evaluate_model_e2e(chkpt_path: str, dataset_path: str, scale: int, examples: list = None,
-                       keyframe_format: str = "png", save_root: str = None):
-    dataset = Vimeo90k(dataset_path, scale, test_mode=True)
-    model = load_model(chkpt_path)
-    model.eval()
+def eval_compression(model: nn.Module, dataset, examples: list = None,
+                     keyframe_format: str = "png", save_root: str = None):
     if examples is None:
         examples = [random.randint(0, len(dataset))]
     if keyframe_format not in ["png", "jpg"]:
@@ -108,15 +98,12 @@ def evaluate_model_e2e(chkpt_path: str, dataset_path: str, scale: int, examples:
         print(f"[{example}]:{delimiter}{dict_to_string(results, delimiter=delimiter)}")
 
         if save_root is not None:
-            save_video(reconstructed[0], save_root, "evaluate_model_e2e_recon")
-            save_video(upscaled[0], save_root, "evaluate_model_e2e_upscale")
+            save_video(reconstructed[0], save_root, "evaluate_compression")
+            save_video(upscaled[0], save_root, "evaluate_upscale")
 
 
 @torch.no_grad()
-def evaluate_upscaled_consistency(chkpt_path: str, path_to_video: str):
-    model = load_model(chkpt_path)
-    model.eval()
-
+def eval_upscale_consistency(model: nn.Module, path_to_video: str):
     video = []
     paths = glob.glob(f"{path_to_video}/*.png")
     transform = ToTensor()
@@ -136,15 +123,40 @@ def evaluate_upscaled_consistency(chkpt_path: str, path_to_video: str):
     save_video(upscaled[0], ".", "reds")
 
 
+@torch.no_grad()
+def eval_estimated_bits(model: nn.Module, dataset, examples: list = None):
+    if examples is None:
+        examples = [random.randint(0, len(dataset))]
+
+    for example in examples:
+        lqs, hqs = dataset.__getitem__(example)
+        lqs = lqs.to(model.device).unsqueeze(0)
+        hqs = hqs.to(model.device).unsqueeze(0)
+        bpps = []
+        previous_frames = lqs[:, 0]
+        for i in range(1, lqs.shape[1]):
+            outputs = model(previous_frames, lqs[:, i], hqs[:, i])
+            previous_frames = outputs.reconstructed
+            bpps.append(sum([value.item() if "bits" in key else 0 for key, value in outputs.loss_vc.items()]))
+        _, real_bpp, _ = model.compress(lqs, keyframe_format="none")
+        estimated_bpp = sum(bpps) / len(bpps)
+        print(estimated_bpp, real_bpp)
+
 
 if __name__ == "__main__":
-    for chkpt in ["../outputs/baseline2048/model_30.pth"]:
-        save_root = str(pathlib.Path(chkpt).parent)
-        first_keyframe = r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\008\00000000.png"
-        second_keyframe = r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\008\00000001.png"
-        evaluate_upscaled_consistency(chkpt, r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\174")
-        # draw_model_distributions(chkpt)
-        # evaluate_model_e2e(chkpt, "../../Datasets/VIMEO90k", 2, [791], save_root=save_root, keyframe_format="jpg")
-        # generate_video(chkpt, [first_keyframe], [second_keyframe], save_root=save_root)
-        # decompress_video_different_keyframe(chkpt, "../../Datasets/VIMEO90k", 2, first_keyframe, [436],
-        #                                     save_root=save_root)
+    chkpt = "../outputs/baseline2048/model_30.pth"
+    model = load_model(chkpt)
+    model.eval()
+    save_root = str(pathlib.Path(chkpt).parent)
+
+    # vimeo = Vimeo90k("../../Datasets/VIMEO90k", 2, test_mode=True)
+    uvg = UVGDataset("../../Datasets/UVG", 2, max_frames=100)
+
+    first_keyframe = r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\008\00000000.png"
+    second_keyframe = r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\008\00000001.png"
+
+    # eval_estimated_bits(model, uvg, [0])
+    # eval_upscale_consistency(model, r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\174")
+    # eval_compression(model, uvg, [0], save_root=save_root, keyframe_format="jpg")
+    # eval_generation(model, [first_keyframe], [second_keyframe], save_root=save_root)
+    # eval_replaced_keyframe(model, uvg, r"D:\Code\Datasets\UVG\Jockey\001.png", [0], save_root=save_root)
