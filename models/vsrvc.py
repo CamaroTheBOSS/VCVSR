@@ -234,8 +234,9 @@ class VSRVCModel(nn.Module):
                     data = data.to(torch.int8)
                 pickle.dump(data, f)
             size_bytes += os.stat(filepath).st_size * 8.
-        save_frame(os.path.join(output_dir, f"keyframe.{keyframe_format}"), video[0, 0])
-        size_bytes += os.stat(os.path.join(output_dir, f"keyframe.{keyframe_format}")).st_size * 8.
+        if keyframe_format != "none":
+            save_frame(os.path.join(output_dir, f"keyframe.{keyframe_format}"), video[0, 0])
+            size_bytes += os.stat(os.path.join(output_dir, f"keyframe.{keyframe_format}")).st_size * 8.
 
         return output_dir, size_bytes / (n * h * w), torch.stack(hqs).squeeze(1).unsqueeze(0)
 
