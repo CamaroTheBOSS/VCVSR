@@ -193,6 +193,8 @@ class VSRVCModel(nn.Module):
         return txt
 
     def compress(self, video: torch.Tensor, save_root: str = "./", keyframe_format="jpg"):
+        if save_root is None:
+            save_root = "./"
         b, n, c, h, w = video.shape
         video = video.to(self.device)
         to_code = {"offsets_prior": [], "offsets_hyperprior": [], "residuals_prior": [], "residuals_hyperprior": []}

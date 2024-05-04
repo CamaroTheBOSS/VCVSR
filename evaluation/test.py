@@ -59,7 +59,7 @@ def eval_replaced_keyframe(model: nn.Module, dataset, another_keyframe: str,
     for example in examples:
         lqs, hqs = dataset.__getitem__(example)
         lqs, hqs = lqs.to(model.device).unsqueeze(0), hqs.to(model.device).unsqueeze(0)
-        data_root, bpp, upscaled = model.compress(lqs, keyframe_format="png")
+        data_root, bpp, upscaled = model.compress(lqs, save_root=save_root, keyframe_format="png")
         reconstructed_original_keyframe = model.decompress(data_root)
 
         keyframe = Image.open(another_keyframe).convert("RGB")
@@ -87,7 +87,7 @@ def eval_compression(model: nn.Module, dataset, examples: list = None,
     for example in examples:
         lqs, hqs = dataset.__getitem__(example)
         lqs, hqs = lqs.to(model.device).unsqueeze(0), hqs.to(model.device).unsqueeze(0)
-        data_root, bpp, upscaled = model.compress(lqs, keyframe_format=keyframe_format)
+        data_root, bpp, upscaled = model.compress(lqs, save_root=save_root, keyframe_format=keyframe_format)
         reconstructed = model.decompress(data_root)
         results = {"vc_psnr": psnr(reconstructed[0, sf:], lqs[0, sf:], aggregate="none"),
                    "vc_ssim": ssim(reconstructed[0, sf:], lqs[0, sf:], aggregate="none"),
@@ -103,7 +103,7 @@ def eval_compression(model: nn.Module, dataset, examples: list = None,
 
 
 @torch.no_grad()
-def eval_upscale_consistency(model: nn.Module, path_to_video: str):
+def eval_upscale_consistency(model: nn.Module, path_to_video: str, save_root="./"):
     video = []
     paths = glob.glob(f"{path_to_video}/*.png")
     transform = ToTensor()
@@ -113,18 +113,18 @@ def eval_upscale_consistency(model: nn.Module, path_to_video: str):
     n, c, h, w = hqs.shape
     lqs = Resize((int(h / 2), int(w / 2)))(hqs)
     lqs, hqs = lqs.to(model.device).unsqueeze(0), hqs.to(model.device).unsqueeze(0)
-    data_root, bpp, upscaled = model.compress(lqs, keyframe_format="png")
+    data_root, bpp, upscaled = model.compress(lqs, save_root=save_root, keyframe_format="png")
 
     col = torch.randint(0, upscaled.shape[-1] - 1, ()).item()
     original = hqs[0, :, :, :, col].permute(1, 2, 0)
     prediction = upscaled[0, :, :, :, col].permute(1, 2, 0)
-    save_frame("original.png", original)
-    save_frame(f"prediction{col}.png", prediction)
-    save_video(upscaled[0], ".", "reds")
+    save_frame(f"{save_root}/consistency_original.png", original)
+    save_frame(f"{save_root}/consistency_prediction{col}.png", prediction)
+    save_video(upscaled[0], save_root, "consistency_video")
 
 
 @torch.no_grad()
-def eval_estimated_bits(model: nn.Module, dataset, examples: list = None):
+def eval_estimated_bits(model: nn.Module, dataset, examples: list = None, save_root="./"):
     if examples is None:
         examples = [random.randint(0, len(dataset))]
 
@@ -138,7 +138,7 @@ def eval_estimated_bits(model: nn.Module, dataset, examples: list = None):
             outputs = model(previous_frames, lqs[:, i], hqs[:, i])
             previous_frames = outputs.reconstructed
             bpps.append(sum([value.item() if "bits" in key else 0 for key, value in outputs.loss_vc.items()]))
-        _, real_bpp, _ = model.compress(lqs, keyframe_format="none")
+        _, real_bpp, _ = model.compress(lqs, save_root=save_root, keyframe_format="none")
         estimated_bpp = sum(bpps) / len(bpps)
         print(estimated_bpp, real_bpp)
 
@@ -154,9 +154,10 @@ if __name__ == "__main__":
 
     first_keyframe = r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\008\00000000.png"
     second_keyframe = r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\008\00000001.png"
+    reds = r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\174"
 
-    # eval_estimated_bits(model, uvg, [0])
-    # eval_upscale_consistency(model, r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\174")
+    # eval_estimated_bits(model, uvg, [0], save_root=save_root)
+    # eval_upscale_consistency(model, reds, save_root=save_root)
     # eval_compression(model, uvg, [0], save_root=save_root, keyframe_format="jpg")
     # eval_generation(model, [first_keyframe], [second_keyframe], save_root=save_root)
     # eval_replaced_keyframe(model, uvg, r"D:\Code\Datasets\UVG\Jockey\001.png", [0], save_root=save_root)

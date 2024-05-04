@@ -5,7 +5,7 @@ import py7zr
 import torch
 
 from datasets import UVGDataset
-from scripts.ffmpeg import run_compression, get_bpp_from_ffmpeg, get_psnr_ssim_video_input, get_psnr_ssim_tensor_input
+from evaluation.ffmpeg import run_compression, get_bpp_from_ffmpeg, get_psnr_ssim_video_input, get_psnr_ssim_tensor_input
 from utils import interpolate_video
 
 
@@ -125,6 +125,6 @@ if __name__ == "__main__":
     uvg_dataset = r"..\..\Datasets\UVG"
     # unzip_uvg(yuv_files)
     # prepare_uvg(yuv_files, uvg_dataset)
-    build_uvg_database(yuv_files, "database.json",
-                       [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37, 39],
-                       uvg_dataset, keyframe_interval=105, max_frames=100)
+    # build_uvg_database(yuv_files, "database.json",
+    #                    [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37, 39],
+    #                    uvg_dataset, keyframe_interval=105, max_frames=100)

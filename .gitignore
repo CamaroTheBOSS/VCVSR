@@ -6,8 +6,8 @@ dcn/build
 dcn/deform_conv_cuda.cp*
 
 outputs/*
-scripts/compressed_data
-scripts/reds
+evaluation/compressed_data
+evaluation/reds
 venv
 wandb
 notki.txt
