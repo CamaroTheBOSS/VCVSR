@@ -99,5 +99,11 @@ class UVGDataset(Dataset):
 
         return lqs, hqs
 
+    def getitem_with_name(self, name: str):
+        for i, vid in enumerate(self.videos):
+            if name in vid[0].split("\\")[-2]:
+                return self.__getitem__(i)
+        return None, None
+
     def __len__(self) -> int:
         return len(self.videos)

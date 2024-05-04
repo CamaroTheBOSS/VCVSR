@@ -87,7 +87,7 @@ def log_to_wandb(loss_dict: dict, metrics_dict: dict) -> None:
 
 def interpolate_video(video: torch.Tensor, size: Tuple[int, int], mode="bilinear"):
     if len(video.shape) == 4:
-        video.unsqueeze(0)
+        video = video.unsqueeze(0)
     interpolated_video = torch.vmap(
         torch.nn.functional.interpolate, in_dims=(1,), out_dims=(1,)
     )(video, size=size, mode=mode, align_corners=False)
