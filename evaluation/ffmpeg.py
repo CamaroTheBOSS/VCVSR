@@ -54,24 +54,24 @@ def get_bpp_from_ffmpeg(ffmpeg_report: str, video_resolution: tuple):
 
 
 @torch.no_grad()
-def get_psnr_ssim_video_input(original: Tensor, mkv_path: str, nframes: int = 100):
+def get_psnr_ssim_video_input(original: Tensor, mkv_path: str, nframes: int = 100, aggregate="mean"):
     target, _, _ = read_video(mkv_path)
-    indexes = torch.linspace(0, len(original), nframes).int().to(original.device)
+    indexes = torch.linspace(0, original.shape[1] - 1, nframes).int().to(original.device)
 
     target = torch.index_select(target.to(original.device), 0, indexes)
     original = torch.index_select(original, 1, indexes)
     target = target.permute(0, 3, 1, 2).unsqueeze(0).float() / 255.
 
-    psnr_value = psnr(target, original, aggregate="mean")
-    ssim_value = ssim(target, original, aggregate="mean")
+    psnr_value = psnr(target, original, aggregate=aggregate)
+    ssim_value = ssim(target, original, aggregate=aggregate)
     return psnr_value.detach().cpu().tolist(), ssim_value.detach().cpu().tolist(),
 
 
 @torch.no_grad()
-def get_psnr_ssim_tensor_input(original: Tensor, target: Tensor, nframes: int = 100):
-    indexes = torch.linspace(0, len(original), nframes).int().to(original.device)
+def get_psnr_ssim_tensor_input(original: Tensor, target: Tensor, nframes: int = 100, aggregate="mean"):
+    indexes = torch.linspace(0, original.shape[1] - 1, nframes).int().to(original.device)
     target = torch.index_select(target.to(original.device), 1, indexes)
     original = torch.index_select(original, 1, indexes)
-    psnr_value = psnr(target, original, aggregate="mean")
-    ssim_value = ssim(target, original, aggregate="mean")
+    psnr_value = psnr(target, original, aggregate=aggregate)
+    ssim_value = ssim(target, original, aggregate=aggregate)
     return psnr_value.detach().cpu().tolist(), ssim_value.detach().cpu().tolist(),
