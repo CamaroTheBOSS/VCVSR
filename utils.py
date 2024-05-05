@@ -94,13 +94,13 @@ def interpolate_video(video: torch.Tensor, size: Tuple[int, int], mode="bilinear
     return interpolated_video
 
 
-def save_checkpoint(model: torch.nn.Module, root: str, epoch: int, only_last: bool = True):
+def save_checkpoint(model: torch.nn.Module, root: str, epoch: int, only_last: bool = True, **kwargs):
     if only_last:
         pth_files = glob.glob(os.path.join(root, "model_*.pth"))
         for file in pth_files:
             os.remove(file)
     path = os.path.join(root, f"model_{epoch + 1}.pth")
-    torch.save({'model_state_dict': model.state_dict(), 'model_name': "vcvsr"}, path)
+    torch.save({'model_state_dict': model.state_dict(), **kwargs}, path)
 
 
 class FileLogger:

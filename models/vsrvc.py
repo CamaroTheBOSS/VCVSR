@@ -1,6 +1,7 @@
 import os
 import pickle
 import shutil
+import time
 from dataclasses import dataclass
 
 import torch
@@ -27,11 +28,15 @@ class VSRVCOutput:
     additional_info: dict = None
 
 
-def load_model(chkpt_path: str = None, rate_distortion_ratio: int = 128):
-    model = VSRVCModel(rate_distortion_ratio)
+def load_model(chkpt_path: str = None, name: str = "VSRVC", rdr: int = 128):
+    model = VSRVCModel(name, rdr)
     if chkpt_path is not None:
         saved_model = torch.load(chkpt_path)
         model.load_state_dict(saved_model['model_state_dict'])
+        if "rate_distortion_ratio" in saved_model.keys():
+            model.rdr = saved_model["rate_distortion_ratio"]
+        if "model_name" in saved_model.keys():
+            model.name = saved_model["model_name"]
     return model
 
 
@@ -154,7 +159,7 @@ class CompressionReconstructionHead(nn.Module):
 
 
 class VSRVCModel(nn.Module):
-    def __init__(self, rate_distortion_ratio: float = 128):
+    def __init__(self, name="", rdr: float = 128):
         super(VSRVCModel, self).__init__()
         self.feature_extraction = nn.Sequential(*[
             nn.Conv2d(3, 64, 5, 2, 2),
@@ -172,7 +177,8 @@ class VSRVCModel(nn.Module):
         self.to(self.device)
 
         self.reconstruction_loss = torch.nn.L1Loss()  # MSELoss
-        self.rdr = rate_distortion_ratio
+        self.rdr = rdr
+        self.name = name
 
     def to(self, device):
         super().to(device)
@@ -192,12 +198,15 @@ class VSRVCModel(nn.Module):
         print(txt)
         return txt
 
-    def compress(self, video: torch.Tensor, save_root: str = "./", keyframe_format="jpg"):
+    def compress(self, video: torch.Tensor, save_root: str = "./", keyframe_format="jpg", verbose=False):
         if save_root is None:
             save_root = "./"
         b, n, c, h, w = video.shape
         video = video.to(self.device)
         to_code = {"offsets_prior": [], "offsets_hyperprior": [], "residuals_prior": [], "residuals_hyperprior": []}
+        start_time = time.time()
+        if verbose:
+            print(f"Starting inference...")
         current_features = self.feature_extraction(video[:, 0])
         previous_features = current_features
         offsets = self.motion_estimator(previous_features, current_features)
@@ -221,6 +230,8 @@ class VSRVCModel(nn.Module):
             to_code["residuals_prior"].append(residual_prior)
             to_code["residuals_hyperprior"].append(residual_hyperprior)
             previous_features = current_features
+        if verbose:
+            print(f"Model inference done")
 
         output_dir = os.path.join(save_root, "compressed_data")
         if os.path.exists(output_dir):
@@ -228,17 +239,26 @@ class VSRVCModel(nn.Module):
         os.makedirs(output_dir)
 
         size_bytes = 0
-        for key, value in to_code.items():
+        if verbose:
+            print(f"Compressing tensors...")
+        items = to_code.items()
+        for i, (key, value) in enumerate(items):
             filepath = os.path.join(output_dir, f"{key}.pkl")
             with gzip.open(filepath, "wb") as f:
                 data = torch.stack(value).squeeze(1).int()
                 if torch.max(torch.abs(data)) < 128:
                     data = data.to(torch.int8)
                 pickle.dump(data, f)
+            if verbose:
+                print(f"{round((i+1) / len(items) * 100, 2)}%")
             size_bytes += os.stat(filepath).st_size * 8.
         if keyframe_format != "none":
+            if verbose:
+                print(f"Compressing keyframe...")
             save_frame(os.path.join(output_dir, f"keyframe.{keyframe_format}"), video[0, 0])
             size_bytes += os.stat(os.path.join(output_dir, f"keyframe.{keyframe_format}")).st_size * 8.
+        if verbose:
+            print(f"Done in {time.time() - start_time} seconds")
 
         return output_dir, size_bytes / (n * h * w), torch.stack(hqs).squeeze(1).unsqueeze(0)
 
