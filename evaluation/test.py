@@ -144,7 +144,7 @@ def eval_estimated_bits(model: nn.Module, dataset, examples: list = None, save_r
 
 
 if __name__ == "__main__":
-    chkpt = "../outputs/baseline2048/model_30.pth"
+    chkpt = "../outputs/baseline1024/model_30.pth"
     model = load_model(chkpt)
     model.eval()
     save_root = str(pathlib.Path(chkpt).parent)
@@ -158,6 +158,6 @@ if __name__ == "__main__":
 
     # eval_estimated_bits(model, uvg, [0], save_root=save_root)
     # eval_upscale_consistency(model, reds, save_root=save_root)
-    # eval_compression(model, uvg, [0], save_root=save_root, keyframe_format="jpg")
+    eval_compression(model, uvg, [6], save_root=save_root, keyframe_format="jpg")
     # eval_generation(model, [first_keyframe], [second_keyframe], save_root=save_root)
     # eval_replaced_keyframe(model, uvg, r"D:\Code\Datasets\UVG\Jockey\001.png", [0], save_root=save_root)
