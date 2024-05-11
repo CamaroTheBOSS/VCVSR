@@ -17,6 +17,7 @@ class Vimeo90k(Dataset):
         self.root = root
         self.sequences = os.path.join(root, "train")
         self.txt_file = os.path.join(root, "sep_testlist.txt" if test_mode else "sep_trainlist.txt")
+        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
         self.scale = scale
         self.crop_size = crop_size
@@ -24,12 +25,12 @@ class Vimeo90k(Dataset):
         self.videos = self.load_paths()
         self.transform = Compose([ToTensor()])
         self.augment = Compose([
-            # ColorJiggle(brightness=(0.85, 1.15), contrast=(0.75, 1.15), saturation=(0.75, 1.25), hue=(-0.02, 0.02),
-            #             same_on_batch=True),
+            ColorJiggle(brightness=(0.85, 1.15), contrast=(0.75, 1.15), saturation=(0.75, 1.25), hue=(-0.02, 0.02),
+                        same_on_batch=True),
             RandomCrop(size=crop_size, same_on_batch=True),
-            # RandomVerticalFlip(same_on_batch=True),
-            # RandomHorizontalFlip(same_on_batch=True),
-            # RandomRotation(degrees=180, same_on_batch=True),
+            RandomVerticalFlip(same_on_batch=True),
+            RandomHorizontalFlip(same_on_batch=True),
+            RandomRotation(degrees=180, same_on_batch=True),
         ])
 
         assert os.path.exists(self.root)
@@ -50,7 +51,7 @@ class Vimeo90k(Dataset):
         video = []
         for path in self.videos[index]:
             video.append(self.transform(Image.open(path).convert("RGB")))
-        return torch.stack(video)
+        return torch.stack(video).to(self.device)
 
     def __getitem__(self, index: int):
         video = self.read_video(index)
@@ -104,6 +105,12 @@ class UVGDataset(Dataset):
             if name in vid[0].split("\\")[-2]:
                 return self.__getitem__(i)
         return None, None
+
+    def get_index_with_name(self, name: str):
+        for i, vid in enumerate(self.videos):
+            if name in vid[0].split("\\")[-2]:
+                return i
+        return None
 
     def __len__(self) -> int:
         return len(self.videos)

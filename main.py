@@ -59,12 +59,13 @@ def train_epoch(dataloader: DataLoader, model: nn.Module, optimizer: Optimizer, 
         outputs = model(lqs[:, 0], lqs[:, 1], hqs[:, 1])
         loss_vc = sum(loss_value for loss_value in outputs.loss_vc.values())
         loss_vsr = sum(loss_value for loss_value in outputs.loss_vsr.values())
+        loss_shared = sum(loss_value for loss_value in outputs.loss_shared.values())
 
-        loss = loss_vc + loss_vsr
-        loss_wandb = add_dict(add_dict(loss_wandb, outputs.loss_vc), outputs.loss_vsr)
+        loss = loss_shared + (loss_vc if model.vc else 0) + (loss_vsr if model.vsr else 0)
+        loss_wandb = add_dict(add_dict(add_dict(loss_wandb, outputs.loss_vc), outputs.loss_vsr), outputs.loss_shared)
         loss_wandb["epoch"] += loss.item()
 
-        metric_logger.update({"vc": loss_vc, "vsr": loss_vsr}, prefix="loss_")
+        metric_logger.update({"vc": loss_vc, "vsr": loss_vsr, "shared": loss_shared}, prefix="loss_")
         metric_logger.update({"lr": optimizer.param_groups[0]['lr']})
 
         loss.backward()
@@ -76,7 +77,7 @@ def train_epoch(dataloader: DataLoader, model: nn.Module, optimizer: Optimizer, 
     return loss_wandb
 
 
-def main():
+def main(rdr):
     torch.manual_seed(777)
     torch.cuda.manual_seed(777)
     batch = 16
@@ -84,15 +85,18 @@ def main():
     lr = 1e-4
     epochs = 30
     checkpoint = 5
-    rate_distortion = 128
+    rate_distortion = rdr
+    vc = False
+    vsr = True
     checkpoint_path = None
     wandb_enabled = True
-    run_name = f"Baseline {rate_distortion}"
-    run_description = f"Baseline for experiments. Will be used as a reference. It has augmentation turned off\n"
+    run_name = f"VSR {rate_distortion}"
+    run_description = (f"Baseline for experiments. Augmentation was used. Only VSR task is learned. RDR is used"
+                       f"in shared losses\n")
     if wandb_enabled:
         wandb.init(project="VSRVC", name=run_name)
 
-    output_dir = init_run_dir("outputs")
+    output_dir = init_run_dir("outputs", run_name)
     logger = FileLogger(output_dir, "train.log")
     logger.log(f"batch: {batch}, scale: {scale}, lr: {lr}, epochs: {epochs}, checkpoint: {checkpoint}, "
                f"checkpoint_path: {checkpoint_path}, wandb: {wandb_enabled}, run_name: {run_name}"
@@ -103,7 +107,7 @@ def main():
     train_dataloader = DataLoader(train_set, batch_size=batch, shuffle=True, drop_last=True)
     test_dataloader = DataLoader(test_set, batch_size=batch, shuffle=False, drop_last=True)
 
-    model = load_model(checkpoint_path, run_name, rate_distortion)
+    model = load_model(checkpoint_path, run_name, rate_distortion, vc, vsr)
     logger.log(model.summary())
     optimizer = AdamW(model.parameters(), lr=lr)
     lr_scheduler = MyCosineAnnealingLR(optimizer, epochs * len(train_dataloader), 0.01 * lr, starting_point=0.5)
@@ -117,7 +121,7 @@ def main():
                 log_to_wandb(loss_dict, metric_dict)
 
             if (epoch + 1) % checkpoint == 0:
-                kwargs = {"model_name": run_name, "rate_distortion_ratio": model.rdr}
+                kwargs = {"model_name": run_name, "rate_distortion_ratio": model.rdr, "vc": model.vc, "vsr": model.vsr}
                 save_checkpoint(model, output_dir, epoch, only_last=True, **kwargs)
 
     except Exception:
@@ -130,4 +134,5 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    for r in [1024, 2048]:
+        main(r)

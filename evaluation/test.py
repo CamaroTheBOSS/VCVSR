@@ -101,6 +101,8 @@ def eval_compression(model: nn.Module, dataset, examples: list = None,
             save_video(reconstructed[0], save_root, "evaluate_compression")
             save_video(upscaled[0], save_root, "evaluate_upscale")
 
+        return lqs, hqs, reconstructed, upscaled
+
 
 @torch.no_grad()
 def eval_upscale_consistency(model: nn.Module, path_to_video: str, save_root="./"):

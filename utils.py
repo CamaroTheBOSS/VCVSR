@@ -28,7 +28,7 @@ def save_video(video: torch.Tensor, root: str, name: str = "vid") -> None:
     for i, frame in enumerate(video):
         numpy_frame = np.clip(frame.detach().permute(1, 2, 0).cpu().numpy() * 255., 0, 255).astype(np.uint8)
         cv_frame = cv2.cvtColor(numpy_frame, cv2.COLOR_RGB2BGR)
-        cv2.imwrite(f"{path}/img{(i + 1)}.png", cv_frame)
+        cv2.imwrite(f"{path}/img{(i + 1):03d}.png", cv_frame)
 
 
 def save_frame(filepath: str, frame: torch.Tensor):
@@ -75,7 +75,7 @@ def init_run_dir(root: str, run_name: str = None) -> str:
         run_name = str(datetime.now().timestamp())
     run_path = os.path.join(root, run_name)
     if os.path.exists(run_path):
-        shutil.rmtree(run_path)
+        raise Exception(f"Cannot create run directory with specified path: {run_path}. Path already exists!")
     os.makedirs(run_path)
     return run_path
 
@@ -113,14 +113,15 @@ class FileLogger:
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.DEBUG)
 
+        self.log_root = log_directory
         self.log_dir = f"{log_directory}/{filename}"
         self.init_log_file()
 
     def init_log_file(self) -> None:
-        if not os.path.exists(self.log_dir):
-            os.makedirs(self.log_dir)
-            with open(self.log_dir, 'w') as f:
-                self.logger.debug("")
+        if not os.path.exists(self.log_root):
+            os.makedirs(self.log_root)
+        with open(self.log_dir, 'w') as f:
+            self.logger.debug("")
 
     def log(self, lines) -> None:
         if isinstance(lines, str):

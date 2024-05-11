@@ -25,11 +25,12 @@ class VSRVCOutput:
     upscaled: torch.Tensor = None
     loss_vc: dict = None
     loss_vsr: dict = None
+    loss_shared: dict = None
     additional_info: dict = None
 
 
-def load_model(chkpt_path: str = None, name: str = "VSRVC", rdr: int = 128):
-    model = VSRVCModel(name, rdr)
+def load_model(chkpt_path: str = None, name: str = "VSRVC", rdr: int = 128, vc: bool = True, vsr: bool = True):
+    model = VSRVCModel(name, rdr, vc, vsr)
     if chkpt_path is not None:
         saved_model = torch.load(chkpt_path)
         model.load_state_dict(saved_model['model_state_dict'])
@@ -37,6 +38,10 @@ def load_model(chkpt_path: str = None, name: str = "VSRVC", rdr: int = 128):
             model.rdr = saved_model["rate_distortion_ratio"]
         if "model_name" in saved_model.keys():
             model.name = saved_model["model_name"]
+        if "vc" in saved_model.keys():
+            model.vc = saved_model["vc"]
+        if "vsr" in saved_model.keys():
+            model.vsr = saved_model["vsr"]
     return model
 
 
@@ -159,7 +164,7 @@ class CompressionReconstructionHead(nn.Module):
 
 
 class VSRVCModel(nn.Module):
-    def __init__(self, name="", rdr: float = 128):
+    def __init__(self, name="", rdr: float = 128, vc: bool = True, vsr: bool = True):
         super(VSRVCModel, self).__init__()
         self.feature_extraction = nn.Sequential(*[
             nn.Conv2d(3, 64, 5, 2, 2),
@@ -179,6 +184,8 @@ class VSRVCModel(nn.Module):
         self.reconstruction_loss = torch.nn.L1Loss()  # MSELoss
         self.rdr = rdr
         self.name = name
+        self.vc = vc
+        self.vsr = vsr
 
     def to(self, device):
         super().to(device)
@@ -186,7 +193,13 @@ class VSRVCModel(nn.Module):
         return self
 
     def summary(self):
-        txt = "Parameters:" \
+        txt = f"Attributes:\n" \
+              f"    name: {self.name}\n" \
+              f"    rate distortion ratio: {self.rdr}\n" \
+              f"    VC: {self.vc}\n" \
+              f"    VSR: {self.vsr}\n" \
+              f"    reconstruction loss: {self.reconstruction_loss}\n" \
+              "Parameters:\n" \
               f"    Feature extractor  : {count_parameters(self.feature_extraction)}\n" \
               f"    Motion estimator   : {count_parameters(self.motion_estimator)}\n" \
               f"    Motion compressor  : {count_parameters(self.motion_compressor)}\n" \
@@ -344,30 +357,36 @@ class VSRVCModel(nn.Module):
             self.motion_compressor.train_compression_decompression(offsets)
         )
         aligned_features = self.motion_compensator(previous_features, decompressed_offsets)
-
-        # [VC branch] Get residual, compress it and decompress
-        residuals = current_features - aligned_features
-        decompressed_residuals, bits_residuals_prior, bits_residuals_hyperprior, count_nonzeros_residuals = (
-            self.residual_compressor.train_compression_decompression(residuals)
-        )
-
-        # [VC branch] Reconstruct features from residual and reconstruct frame
-        reconstructed_features = decompressed_residuals + aligned_features
-        reconstructed_frame = self.reconstruction_head(reconstructed_features)
-
-        # [VC branch] Loss function
         aligned_frame = self.reconstruction_head(aligned_features)
         current_frame = self.reconstruction_head(current_features)
-        frame_area = current_lqf.shape[0] * current_lqf.shape[2] * current_lqf.shape[3]  # B * H * W
-        loss_vc = {
-            "vc_recon_compression": self.rdr * self.reconstruction_loss(reconstructed_frame, current_lqf),
-            "vc_recon_alignment": self.rdr * self.reconstruction_loss(aligned_frame, current_lqf),
-            "vc_recon_features": self.rdr * self.reconstruction_loss(current_frame, current_lqf),
-            "vc_bits_offsets_prior": bits_offsets_prior / frame_area,
-            "vc_bits_offsets_hyperprior": bits_offsets_hyperprior / frame_area,
-            "vc_bits_residuals_prior": bits_residuals_prior / frame_area,
-            "vc_bits_residuals_hyperprior": bits_residuals_hyperprior / frame_area,
+        loss_shared = {
+            "shared_recon_alignment": self.rdr * self.reconstruction_loss(aligned_frame, current_lqf),
+            "shared_recon_features": self.rdr * self.reconstruction_loss(current_frame, current_lqf),
         }
+
+        # [VC branch] Get residual, compress it and decompress
+        loss_vc = {}
+        reconstructed_frame = torch.zeros_like(current_lqf)
+        count_nonzeros_residuals = 0
+        if self.vc:
+            residuals = current_features - aligned_features
+            decompressed_residuals, bits_residuals_prior, bits_residuals_hyperprior, count_nonzeros_residuals = (
+                self.residual_compressor.train_compression_decompression(residuals)
+            )
+
+            # [VC branch] Reconstruct features from residual and reconstruct frame
+            reconstructed_features = decompressed_residuals + aligned_features
+            reconstructed_frame = self.reconstruction_head(reconstructed_features)
+
+            # [VC branch] Loss function
+            frame_area = current_lqf.shape[0] * current_lqf.shape[2] * current_lqf.shape[3]  # B * H * W
+            loss_vc = {
+                "vc_recon_compression": self.rdr * self.reconstruction_loss(reconstructed_frame, current_lqf),
+                "vc_bits_offsets_prior": bits_offsets_prior / frame_area,
+                "vc_bits_offsets_hyperprior": bits_offsets_hyperprior / frame_area,
+                "vc_bits_residuals_prior": bits_residuals_prior / frame_area,
+                "vc_bits_residuals_hyperprior": bits_residuals_hyperprior / frame_area,
+            }
 
         # [SR branch] Super-resolution upscale
         upscaled_frame = self.upscaler_head(aligned_features, current_lqf)
@@ -378,4 +397,4 @@ class VSRVCModel(nn.Module):
         }
 
         additional_info = {"count_compressed_data_non_zeros": count_nonzeros_offsets + count_nonzeros_residuals}
-        return VSRVCOutput(reconstructed_frame, upscaled_frame, loss_vc, loss_vsr, additional_info)
+        return VSRVCOutput(reconstructed_frame, upscaled_frame, loss_vc, loss_vsr, loss_shared, additional_info)
