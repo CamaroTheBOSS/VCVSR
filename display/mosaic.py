@@ -13,6 +13,7 @@ from torchvision.transforms import ToTensor
 from datasets import UVGDataset
 from evaluation.test import eval_compression
 from models.vsrvc import load_model
+from utils import interpolate_video
 
 
 def _read_data(chkpt_paths: List[str], dataset: UVGDataset, index: int, indexes: torch.Tensor):
@@ -78,11 +79,11 @@ def compression_mosaic(chkpt_paths: List[str], mosaic_like_video: Union[str, int
         for i, frame in enumerate(tensor.squeeze(0)):
             row.append(frame)
             if inter_pad[1] > 0 and i < (len(tensor.squeeze(0)) - 1):
-                row.append(torch.ones(3, h, inter_pad[1]))
+                row.append(torch.ones(3, h, inter_pad[1]).to(tensor.device))
         rows.append(torch.cat(row, dim=2))
         _, _, w = rows[0].shape
         if inter_pad[0] > 0 and j < (len(data) - 1):
-            rows.append(torch.ones(3, inter_pad[0], w))
+            rows.append(torch.ones(3, inter_pad[0], w).to(tensor.device))
     output = torch.cat(rows, dim=1)
     output = np.clip((output.detach().permute(1, 2, 0).cpu().numpy()) * 255., 0, 255).astype(np.uint8)
     output = cv2.cvtColor(output, cv2.COLOR_RGB2BGR)
@@ -106,6 +107,9 @@ def superresolution_mosaic(chkpt_paths: List[str], mosaic_like_video: Union[str,
         _, data = _generate_data(chkpt_paths, dataset, index, indexes)
     else:
         _, data = _read_data(chkpt_paths, dataset, index, indexes)
+    lqs, _ = dataset[index]
+    bilinear = interpolate_video(lqs[indexes], (lqs.shape[-2] * 2, lqs.shape[-1] * 2))
+    data.insert(1, bilinear)
 
     # Mosaic
     if ncols is None:
@@ -127,7 +131,7 @@ def superresolution_mosaic(chkpt_paths: List[str], mosaic_like_video: Union[str,
             frame = data[curr_index].squeeze(0).squeeze(0)
             frame = frame[:, y:min(y+h, frame.shape[1]), x:min(x+w, frame.shape[2])]
             row.append(frame)
-            if inter_pad[1] > 0 and j < (len(frame) - 1):
+            if inter_pad[1] > 0 and j < (ncols - 1):
                 row.append(torch.ones(3, h, inter_pad[1]))
             curr_index += 1
             if curr_index == len(data):
@@ -138,7 +142,7 @@ def superresolution_mosaic(chkpt_paths: List[str], mosaic_like_video: Union[str,
             row = torch.cat([row, torch.ones(3, h, rows[0].shape[2] - row.shape[2])], dim=2)
         rows.append(row)
         _, _, width = rows[0].shape
-        if inter_pad[0] > 0 and i < (len(data) - 1):
+        if inter_pad[0] > 0 and i < (nrows - 1):
             rows.append(torch.ones(3, inter_pad[0], width))
         if done:
             break
@@ -159,6 +163,49 @@ def superresolution_mosaic(chkpt_paths: List[str], mosaic_like_video: Union[str,
         cv2.imwrite(os.path.join(save_root, "vsr_mosaic_source.png"), output)
 
 
+def generated_video_mosaic(path_to_video: str, n_frames: int = 9, ncols: int = None, inter_pad: tuple = (0, 0),
+                           save_root: str = "./"):
+    frame_paths = glob.glob(os.path.join(path_to_video, "*.png"))
+    data = []
+    for i in range(n_frames):
+        data.append(cv2.imread(frame_paths[i]))
+
+    # Mosaic
+    if ncols is None:
+        nrows = 1
+        ncols = len(data)
+    else:
+        nrows = ceil(len(data) / ncols)
+    curr_index = 0
+    done = False
+    rows = []
+    h, w, c = data[0].shape
+    for i in range(nrows):
+        row = []
+        for j in range(ncols):
+            row.append(data[curr_index])
+            if inter_pad[1] > 0 and j < (ncols - 1):
+                row.append(255 * np.ones((h, inter_pad[1], 3)))
+            curr_index += 1
+            if curr_index == len(data):
+                done = True
+                break
+        row = np.hstack(row)
+        if i > 0 and row.shape[2] < rows[0].shape[2]:
+            row = np.vstack([row, 255 * np.ones((h, rows[0].shape[1] - row.shape[1], 3))])
+        rows.append(row)
+        _, width, _ = rows[0].shape
+        if inter_pad[0] > 0 and i < (nrows - 1):
+            rows.append(255 * np.ones((inter_pad[0], width, 3)))
+        if done:
+            break
+
+    output = np.vstack(rows)
+    filename = f"generated_video.png"
+    cv2.imwrite(os.path.join(save_root, filename), output)
+
+
+
 def how_many_layers(checkpoints):
     model = load_model(checkpoints[0])
     print(list(model.parameters()))
@@ -168,7 +215,9 @@ def how_many_layers(checkpoints):
 if __name__ == "__main__":
     checkpoints = ["../outputs/baseline_no_aug128/model_30.pth", "../outputs/baseline_no_aug512/model_30.pth",
                    "../outputs/baseline_no_aug1024/model_30.pth", "../outputs/baseline_no_aug2048/model_30.pth"]
-    how_many_layers(checkpoints)
-    # superresolution_mosaic(checkpoints, "YachtRide", ncols=None, save_root="../outputs", inter_pad=(5, 2),
-    #                        box=(720, 500, 100, 100))
-    # compression_mosaic(checkpoints, "YachtRide", ncols=3, save_root="../outputs", inter_pad=(5, 2))
+    # superresolution_mosaic(checkpoints, "YachtRide", ncols=3, save_root="../outputs", inter_pad=(30, 2),
+    #                        box=(800, 700, 100, 100))
+    # compression_mosaic(checkpoints, "YachtRide", ncols=3, save_root="../outputs", inter_pad=(5, 2),
+    #                    generate_data=True)
+    generated_video_mosaic("../outputs/baseline_no_aug2048/generated_video/generated", 15, ncols=3,
+                           save_root="../outputs", inter_pad=(3, 3))
