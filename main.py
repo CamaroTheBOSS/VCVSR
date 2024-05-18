@@ -86,13 +86,13 @@ def main(rdr):
     epochs = 30
     checkpoint = 5
     rate_distortion = rdr
-    vc = False
+    vc = True
     vsr = True
     checkpoint_path = None
     wandb_enabled = True
-    run_name = f"VSR {rate_distortion}"
-    run_description = (f"Baseline for experiments. Augmentation was used. Only VSR task is learned. RDR is used"
-                       f"in shared losses\n")
+    run_name = f"VCVSR NO AUGMENTATION ONCE MORE {rate_distortion}"
+    run_description = (f"Baseline for experiments. Augmentation was used. Both tasks are trained. RDR is used"
+                       f"in shared losses and VC loss\n")
     if wandb_enabled:
         wandb.init(project="VSRVC", name=run_name)
 
@@ -134,5 +134,5 @@ def main(rdr):
 
 
 if __name__ == '__main__':
-    for r in [1024, 2048]:
+    for r in [2048, 1024, 512, 128]:
         main(r)
