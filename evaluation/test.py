@@ -1,8 +1,11 @@
 import glob
+import json
 import os
 import pathlib
 import random
+import shutil
 
+import numpy as np
 import torch
 from kornia.augmentation import RandomCrop, Resize
 from torch import nn
@@ -16,39 +19,65 @@ from utils import save_video, dict_to_string, save_frame
 import matplotlib.pyplot as plt
 
 
-def sample(cdf, x):
-    probs = torch.rand(x.size()).to(x.device)
-    dist_indices = torch.argmin(torch.abs(probs.unsqueeze(-1) - cdf), dim=-1)
-    values = torch.gather(x.repeat(len(cdf), 1), 1, dist_indices)
-    return values
+def derivative(cdf):
+    prev_cdf = cdf[:, 0, :-1]
+    next_cdf = cdf[:, 0, 1:]
+    derivative_values = next_cdf - prev_cdf
+    return derivative_values
 
 
 @torch.no_grad()
-def draw_model_distributions(model: nn.Module):
-    x = torch.linspace(-25, 25, 3000).to(model.device)
+def draw_model_distributions_deriv(model: nn.Module):
+    x = torch.linspace(-25, 25, 5000).to(model.device)
     outputs = model.residual_compressor.bit_estimator.distribution.cdf(x)
-    sampled = sample(outputs[0, :], x)
+    derivative_values = derivative(outputs[0, :]).detach().cpu().numpy()
 
+    x = x.detach().cpu().numpy()
+    outputs = outputs[0, :, 0].detach().cpu().numpy()
     for idx in range(128):
-        hg = torch.histogram(sampled[idx].detach().cpu(), bins=20, density=True)
-        hist = (hg.hist - hg.hist.min()) / (hg.hist.max() - hg.hist.min())
-        bins = hg.bin_edges[1:]
-        plt.plot(bins.detach().numpy(), hist.numpy())
-        plt.plot(x.detach().cpu().numpy(), outputs[0, idx, 0].detach().cpu().numpy())
+        deriv = (derivative_values[idx] - derivative_values[idx].min()) / (derivative_values[idx].max() - derivative_values[idx].min())
+        outputs[idx][outputs[idx] < 1e-6] = 0
+        outputs[idx][outputs[idx] > 1 - 1e-6] = 1
+        plt.plot(x, outputs[idx], "-b")
+        plt.plot(x[:-1], deriv, "-r")
+        plt.xlabel("Wartość")
+        plt.ylabel("Prawdopodobieństwo")
+        plt.xlim([x[len(outputs[idx]) - np.argmin(np.flip(outputs[idx]))], x[np.argmax(outputs[idx])]])
+        plt.legend(["Wytrenowana dystrybuanta", "Rozkład wartości"])
         plt.show()
 
 
 @torch.no_grad()
-def eval_generation(model: nn.Module, keyframe1_paths: list, keyframe2_paths: list, save_root: str = None):
-    transform = ToTensor()
-    crop = RandomCrop((128, 192), same_on_batch=True)
-    for path1, path2 in zip(keyframe1_paths, keyframe2_paths):
-        keyframe1 = transform(Image.open(path1).convert("RGB")).to(model.device)
-        keyframe2 = transform(Image.open(path2).convert("RGB")).to(model.device)
-        cropped = crop(torch.stack([keyframe1, keyframe2]))
-        video = model.generate_video(cropped[0].unsqueeze(0), cropped[1].unsqueeze(0))
-        if save_root is not None:
-            save_video(video[0], save_root, "generated_video_from_2_keyframes")
+def eval_generation(model: nn.Module, dataset, example: int, save_root: str = None):
+    lqs, _ = dataset[example]
+    video = model.generate_video(lqs[0].unsqueeze(0), lqs[1].unsqueeze(0), nframes=lqs.shape[0])
+    if save_root is not None:
+        save_video(video[0], save_root, "generated_video/generated")
+        save_video(lqs, save_root, "generated_video/original")
+
+
+@torch.no_grad()
+def eval_motion_transfer(model: nn.Module, dataset, first_example: int, second_example: int, save_root: str = "./"):
+    compressed_data_paths = []
+    for i, example in enumerate([first_example, second_example]):
+        print(f"Compressing {i+1}")
+        lqs, _ = dataset[example]
+        lqs = lqs.to(model.device).unsqueeze(0)
+        data_root, _, _ = model.compress(lqs, save_root=save_root, keyframe_format="png", folder_name=f"compressed_{i+1}")
+        compressed_data_paths.append(data_root)
+    print(f"Replacing motion vectors...")
+    tmp_path = os.path.join(save_root, "tmp")
+    os.makedirs(tmp_path)
+    for file in ["keyframe.png"]:
+        shutil.move(os.path.join(compressed_data_paths[0], file), os.path.join(tmp_path, file))
+        shutil.move(os.path.join(compressed_data_paths[1], file), os.path.join(compressed_data_paths[0], file))
+        shutil.move(os.path.join(tmp_path, file), os.path.join(compressed_data_paths[1], file))
+    shutil.rmtree(tmp_path)
+
+    for i, data_path in enumerate(compressed_data_paths):
+        print(f"Decompressing {i + 1}")
+        reconstructed_first = model.decompress(data_path)
+        save_video(reconstructed_first[0], save_root, f"motion_transferred_{i+1}")
 
 
 @torch.no_grad()
@@ -100,6 +129,9 @@ def eval_compression(model: nn.Module, dataset, examples: list = None,
         if save_root is not None:
             save_video(reconstructed[0], save_root, "evaluate_compression")
             save_video(upscaled[0], save_root, "evaluate_upscale")
+            with open(os.path.join(save_root, f"example_{example}.json"), "w") as f:
+                results = {key: value.tolist() if isinstance(value, torch.Tensor) else value for key, value in results.items()}
+                json.dump(results, f)
 
         return lqs, hqs, reconstructed, upscaled
 
@@ -146,20 +178,18 @@ def eval_estimated_bits(model: nn.Module, dataset, examples: list = None, save_r
 
 
 if __name__ == "__main__":
-    chkpt = "../outputs/baseline1024/model_30.pth"
+    chkpt = "../outputs/baseline_no_aug1024/model_30.pth"
     model = load_model(chkpt)
     model.eval()
     save_root = str(pathlib.Path(chkpt).parent)
 
-    # vimeo = Vimeo90k("../../Datasets/VIMEO90k", 2, test_mode=True)
-    uvg = UVGDataset("../../Datasets/UVG", 2, max_frames=100)
+    # dataset = Vimeo90k("../../Datasets/VIMEO90k", 2, test_mode=True)
+    dataset = UVGDataset("../../Datasets/UVG", 2, max_frames=100)
 
-    first_keyframe = r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\008\00000000.png"
-    second_keyframe = r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\008\00000001.png"
-    reds = r"D:\Code\basicvsr\BasicVSR_PlusPlus\data\REDS\train_sharp\174"
-
+    # draw_model_distributions_deriv(model)
     # eval_estimated_bits(model, uvg, [0], save_root=save_root)
     # eval_upscale_consistency(model, reds, save_root=save_root)
-    eval_compression(model, uvg, [6], save_root=save_root, keyframe_format="jpg")
-    # eval_generation(model, [first_keyframe], [second_keyframe], save_root=save_root)
-    # eval_replaced_keyframe(model, uvg, r"D:\Code\Datasets\UVG\Jockey\001.png", [0], save_root=save_root)
+    # eval_compression(model, uvg, [6], save_root=save_root, keyframe_format="jpg")
+    # eval_generation(model, dataset, 3, save_root=save_root)
+    # eval_replaced_keyframe(model, dataset, r"D:\Code\Datasets\UVG\YachtRide\001.png", [3], save_root=save_root)
+    eval_motion_transfer(model, dataset, 6, 3, save_root)
