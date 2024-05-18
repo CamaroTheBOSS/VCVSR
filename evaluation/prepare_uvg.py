@@ -66,11 +66,12 @@ def prepare_uvg(src_path: str, dst_path: str):
 
 @torch.no_grad()
 def build_uvg_database(src_path: str, dst_path: str, crfs: list, uvg_path: str,
-                       keyframe_interval: int = 0, max_frames: int = 100, n_samples: int = 7):
+                       keyframe_interval: int = 0, max_frames: int = 100, n_samples: int = 7, aggregate: str = "mean"):
     """
         Function, which search for UVG YUV files and creates database txt file with information about psnr, ssim when
         compressed with hevc/avc with different crf (compression ratio factor) and keyframe interval In addition
         this function evaluates bilinear interpolation. Note that this search only for videos with resolution 1920x1080.
+        :param aggregate: way metrics are aggregated related to frames
         :param n_samples: how many samples use for calculating psnr and ssim
         :param uvg_path: path to uvg dataset root
         :param max_frames: maximum number of frames to take into account
@@ -98,19 +99,20 @@ def build_uvg_database(src_path: str, dst_path: str, crfs: list, uvg_path: str,
         lqs = lqs.to(device).unsqueeze(0)
         hqs = hqs.to(device).unsqueeze(0)
         upscaled = interpolate_video(lqs, size=hqs.shape[-2:])
-        psnr_bil, ssim_bil = get_psnr_ssim_tensor_input(upscaled, hqs, nframes=n_samples)
+        psnr_bil, ssim_bil = get_psnr_ssim_tensor_input(upscaled, hqs, nframes=n_samples, aggregate=aggregate)
         iteration_result = {"name": name, "bilinear_psnr": psnr_bil, "bilinear_ssim": ssim_bil}
+        torch.cuda.empty_cache()
         for codec in codecs:
             iteration_result[codec] = []
             save_root = f"../outputs/{codec}"
             for crf in crfs:
                 mkv_path, ffreport_path = run_compression(path, crf, codec=codec, keyframe_interval=keyframe_interval,
                                                           quite=True, save_root=save_root, max_frames=max_frames)
-                bpp_values = get_bpp_from_ffmpeg(ffreport_path, (960, 512))
-                psnr_values, ssim_values = get_psnr_ssim_video_input(lqs, mkv_path, nframes=n_samples)
+                bpp_values = get_bpp_from_ffmpeg(ffreport_path, (960, 512), aggregate=aggregate)
+                psnr_values, ssim_values = get_psnr_ssim_video_input(lqs, mkv_path, nframes=n_samples, aggregate=aggregate)
 
                 iteration_result[codec].append({"crf": crf, "bpp": bpp_values, "psnr": psnr_values, "ssim": ssim_values})
-                print(f"[{iteration}/{all_iters}] {iteration_result}")
+                print(f"[{iteration}/{all_iters}]")
                 iteration += 1
         output["data"].append(iteration_result)
     with open(dst_path, "w") as f:
@@ -122,6 +124,6 @@ if __name__ == "__main__":
     uvg_dataset = r"..\..\Datasets\UVG"
     # unzip_uvg(yuv_files)
     # prepare_uvg(yuv_files, uvg_dataset)
-    build_uvg_database(yuv_files, "database.json",
+    build_uvg_database(yuv_files, "database2.json",
                        [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37, 39],
-                       uvg_dataset, keyframe_interval=105, max_frames=100)
+                       uvg_dataset, keyframe_interval=105, max_frames=100, n_samples=100, aggregate="none")

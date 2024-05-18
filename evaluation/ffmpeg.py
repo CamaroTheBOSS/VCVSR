@@ -39,7 +39,7 @@ def run_compression(yuv_path: str, crf_val: int, codec: str = "hevc", keyframe_i
     return output_path, ffreport
 
 
-def get_bpp_from_ffmpeg(ffmpeg_report: str, video_resolution: tuple):
+def get_bpp_from_ffmpeg(ffmpeg_report: str, video_resolution: tuple, aggregate: str = "mean"):
     with open(ffmpeg_report) as f:
         content = f.readlines()
 
@@ -50,28 +50,37 @@ def get_bpp_from_ffmpeg(ffmpeg_report: str, video_resolution: tuple):
             size = splitted[7]
             frame_sizes.append(int(size))
     nbits_per_frame = np.array(frame_sizes) * 8.0 / (video_resolution[0] * video_resolution[1])
-    return nbits_per_frame.mean()
+    if aggregate == "mean":
+        return nbits_per_frame.mean()
+    if aggregate == "none":
+        return nbits_per_frame.tolist()
+    raise Exception("Unknown aggregate value. Supported aggregates: [mean, none]")
 
 
 @torch.no_grad()
 def get_psnr_ssim_video_input(original: Tensor, mkv_path: str, nframes: int = 100, aggregate="mean"):
-    target, _, _ = read_video(mkv_path)
-    indexes = torch.linspace(0, original.shape[1] - 1, nframes).int().to(original.device)
+    b, n, c, h, w = original.shape
+    indexes = torch.linspace(0, n - 1, nframes).int()
 
-    target = torch.index_select(target.to(original.device), 0, indexes)
-    original = torch.index_select(original, 1, indexes)
+    target, _, _ = read_video(mkv_path)
+    target = target[indexes].to(original.device)
+    original = original[:, indexes.to(original.device)]
     target = target.permute(0, 3, 1, 2).unsqueeze(0).float() / 255.
 
-    psnr_value = psnr(target, original, aggregate=aggregate)
-    ssim_value = ssim(target, original, aggregate=aggregate)
+    psnr_value = psnr(target[0], original[0], aggregate=aggregate)
+    ssim_value = ssim(target[0], original[0], aggregate=aggregate)
     return psnr_value.detach().cpu().tolist(), ssim_value.detach().cpu().tolist(),
 
 
 @torch.no_grad()
 def get_psnr_ssim_tensor_input(original: Tensor, target: Tensor, nframes: int = 100, aggregate="mean"):
-    indexes = torch.linspace(0, original.shape[1] - 1, nframes).int().to(original.device)
-    target = torch.index_select(target.to(original.device), 1, indexes)
-    original = torch.index_select(original, 1, indexes)
-    psnr_value = psnr(target, original, aggregate=aggregate)
-    ssim_value = ssim(target, original, aggregate=aggregate)
+    assert original.shape == target.shape
+    b, n, c, h, w = original.shape
+    indexes = torch.linspace(0, n - 1, nframes).int()
+
+    target = target[:, indexes].to(original.device)
+    original = original[:, indexes.to(original.device)]
+
+    psnr_value = psnr(target[0], original[0], aggregate=aggregate)
+    ssim_value = ssim(target[0], original[0], aggregate=aggregate)
     return psnr_value.detach().cpu().tolist(), ssim_value.detach().cpu().tolist(),
