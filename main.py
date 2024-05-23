@@ -90,7 +90,7 @@ def main(rdr):
     vsr = True
     checkpoint_path = None
     wandb_enabled = True
-    run_name = f"VCVSR NO AUGMENTATION ONCE MORE {rate_distortion}"
+    run_name = f"VCVSR {rate_distortion}"
     run_description = (f"Baseline for experiments. Augmentation was used. Both tasks are trained. RDR is used"
                        f"in shared losses and VC loss\n")
     if wandb_enabled:
