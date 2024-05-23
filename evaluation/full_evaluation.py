@@ -23,26 +23,10 @@ Just full test.
 def get_line_type(key):
     key_dict = {"hevc": "-",
                 "avc": "-",
-                ##################################
-                "model-bez-augmentacji-128": "-",
-                "model-bez-augmentacji-512": "--",
-                "model-bez-augmentacji-1024": "-",
-                "model-bez-augmentacji-2048": "--",
-                ##################################
-                "VCVSR 128": "-",
-                "VCVSR 512": "--",
-                "VCVSR 1024": "-",
-                "VCVSR 2048": "--",
-                ##################################
-                "VSR 128": "-",
-                "VSR 512": "--",
-                "VSR 1024": "-",
-                "VSR 2048": "--",
-                ##################################
-                "Baseline VC 128": "-",
-                "Baseline VC 512": "--",
-                "Baseline VC 1024": "-",
-                "Baseline VC 2048": "--",
+                "λ=128": "-",
+                "λ=512": "--",
+                "λ=1024": "-",
+                "λ=2048": "--",
                 }
     return key_dict[key]
 
@@ -51,26 +35,10 @@ def get_color(key):
     # Okabe Ito color pallete
     key_dict = {"hevc": "#D55E00",
                 "avc": "#E69F00",
-                ########################################
-                "model-bez-augmentacji-128": "#56B4E9",
-                "model-bez-augmentacji-512": "#0072B2",
-                "model-bez-augmentacji-1024": "#009E73",
-                "model-bez-augmentacji-2048": "#000000",
-                ########################################
-                "VCVSR 128": "#56B4E9",
-                "VCVSR 512": "#0072B2",
-                "VCVSR 1024": "#009E73",
-                "VCVSR 2048": "#000000",
-                ########################################
-                "VSR 128": "#56B4E9",
-                "VSR 512": "#0072B2",
-                "VSR 1024": "#009E73",
-                "VSR 2048": "#000000",
-                ########################################
-                "Baseline VC 128": "#56B4E9",
-                "Baseline VC 512": "#0072B2",
-                "Baseline VC 1024": "#009E73",
-                "Baseline VC 2048": "#000000",
+                "λ=128": "#56B4E9",
+                "λ=512": "#0072B2",
+                "λ=1024": "#009E73",
+                "λ=2048": "#000000",
                 }
     return key_dict[key]
 
@@ -85,6 +53,7 @@ def plot_output_files_size(model_databases: List[str]):
         motion_bpp = 0
         residual_bpp = 0
         keyframe_bpp = 0
+        name = f"λ={database['rdr']}"
         for data_entry in database["data"]:
             for bpp, filename in zip(data_entry["bpp"], filenames):
                 keyframe_bpp = keyframe_bpp + bpp if filename.startswith("klatka") else keyframe_bpp
@@ -94,12 +63,12 @@ def plot_output_files_size(model_databases: List[str]):
         keyframe_bpp = round(keyframe_bpp * 100 / sum_bpp, 2)
         motion_bpp = round(motion_bpp * 100 / sum_bpp, 2)
         residual_bpp = round(residual_bpp * 100 / sum_bpp, 2)
-        plot_data[database["model_name"]] = (keyframe_bpp, motion_bpp, residual_bpp)
+        plot_data[name] = (keyframe_bpp, motion_bpp, residual_bpp)
 
     keyframes = []
     motions = []
     residuals = []
-    model_names = [f"λ={key.split('-')[-1]}" for key in plot_data.keys()]
+    model_names = list(plot_data.keys())
     for i, (key, values) in enumerate(plot_data.items()):
         keyframes.append(values[0])
         motions.append(values[1])
@@ -146,20 +115,22 @@ def plot_superresolution_table(model_databases: List[str], ffmpeg_database: str)
     for database_path in model_databases:
         with open(database_path, "r") as f:
             database = json.load(f)
-        plot_data[database["model_name"]] = ([], [])
+        name = f"λ={database['rdr']}"
+        plot_data[name] = ([], [])
         for data_entry in database["data"]:
             for i, metric in enumerate(["vsr_psnr", "vsr_ssim"]):
                 bilinear = data_entry[metric]
-                plot_data[database["model_name"]][i].append(bilinear)
-        plot_data[database["model_name"]] = (np.array(plot_data[database["model_name"]][0]).mean(),
-                                             np.array(plot_data[database["model_name"]][1]).mean())
+                plot_data[name][i].append(bilinear)
+        plot_data[name] = (np.array(plot_data[name][0]).mean(),
+                           np.array(plot_data[name][1]).mean())
 
     for key, (psnr, ssim) in plot_data.items():
         plot_data[key] = f"({round(psnr, 3)}, {round(ssim, 3)})"
-    df = pd.DataFrame(list(zip(["model", "jakość"], *[[key, value] for key, value in plot_data.items()]))).transpose()
-    to_print = "".join(["   {0:30}".format(name) for name in ["model", "jakość"]]) + "\n"
+    df = pd.DataFrame(
+        list(zip(["model", "jakość"], *[[key, value] for key, value in plot_data.items()]))).transpose()
+    to_print = "".join(["   {0:24}".format(name) for name in ["model", "jakość"]]) + "\n"
     for key, values in plot_data.items():
-        to_print += "{0:30}   ".format(key) + "   {0:30}".format(values) + "\n"
+        to_print += "{0:24}   ".format(key) + "   {0:24}".format(values) + "\n"
 
     print(to_print)
     df.to_csv(f"../outputs/super-resolution-quality.csv")
@@ -189,8 +160,8 @@ def plot_compression_curve(model_databases: List[str], ffmpeg_database: str, qua
     for database_path in model_databases:
         with open(database_path, "r") as f:
             database = json.load(f)
-        assert ("model_name" in database.keys())
-
+        assert ("rdr" in database.keys())
+        name = f"λ={database['rdr']}"
         rdrs.append(database["rdr"])
         mean_quality = []
         mean_bpp = []
@@ -199,10 +170,10 @@ def plot_compression_curve(model_databases: List[str], ffmpeg_database: str, qua
             bpp = data_entry["bpp"]
             mean_quality.append(sum(quality) / len(quality))
             mean_bpp.append(sum(bpp))
-        model_plot_data[database["model_name"]] = (
-        [sum(mean_bpp) / len(mean_bpp)], [sum(mean_quality) / len(mean_quality)])
+        model_plot_data[name] = (
+            [sum(mean_bpp) / len(mean_bpp)], [sum(mean_quality) / len(mean_quality)])
 
-    to_print = "".join(["   {0:30}".format(name) for name in
+    to_print = "".join(["{0:15}   ".format(name) for name in
                         ["model", "BPP", f"model-{quality_metric}"] + [f"{c}-{quality_metric}" for c in
                                                                        codec_plot_data.keys()]]) + "\n"
     to_df = [["model", "BPP", f"model-{quality_metric}"] + [f"{c}-{quality_metric}" for c in codec_plot_data.keys()]]
@@ -210,9 +181,9 @@ def plot_compression_curve(model_databases: List[str], ffmpeg_database: str, qua
         print_values = [str(round(x_data[0], 3)), str(round(y_data[0], 3))]
         for x_codec, y_codec in codec_plot_data.values():
             interpolated = np.interp(np.array(x_data), np.flip(np.array(x_codec)), np.flip(np.array(y_codec)))
-            print_values.append(round(interpolated[0], 3))
+            print_values.append(str(round(interpolated[0], 3)))
         to_df.append([key, *print_values])
-        to_print += "{0:30}   ".format(key) + "".join(["{0:30}   ".format(value) for value in print_values]) + "\n"
+        to_print += "{0:15}   ".format(key) + "".join(["{0:15}   ".format(value) for value in print_values]) + "\n"
     print(
         quality_metric.upper() + "".join(["-" for i in range(int(len(to_print) / (len(model_plot_data.keys()) + 3)))]))
     print(to_print)
@@ -279,16 +250,18 @@ def plot_frame_compression_performance(model_databases: list, quality_metric: st
         with open(database_path, "r") as f:
             database = json.load(f)
         qualities = []
+        name = f"λ={database['rdr']}"
         for data_entry in database["data"]:
             key = "vc_" + quality_metric
             qualities.append(data_entry[key])
-        model_plot_data[database["model_name"]] = np.array(qualities).mean(axis=0)
-        names.append(database["model_name"])
+        model_plot_data[name] = np.array(qualities).mean(axis=0)
+        names.append(name)
 
     # for key, y_data in codec_plot_data.items():
     #     plt.plot(list(range(1, len(y_data) + 1)), y_data, linestyle=get_line_type(key), color=get_color(key), linewidth=2.0)
     for key, y_data in model_plot_data.items():
-        plt.plot(list(range(1, len(y_data) + 1)), y_data, linestyle=get_line_type(key), color=get_color(key), linewidth=2.0)
+        plt.plot(list(range(1, len(y_data) + 1)), y_data, linestyle=get_line_type(key), color=get_color(key),
+                 linewidth=2.0)
     plt.xlabel("Klatka")
     plt.ylabel(quality_metric.upper())
     plt.legend(names)
@@ -316,9 +289,9 @@ if __name__ == "__main__":
 
     # Plot eval databases
     baseline = [f"{str(pathlib.Path(chkpt).parent)}/uvg_eval.json" for chkpt in checkpoints]
-    plot_frame_compression_performance(baseline, quality_metric="psnr")
-    plot_frame_compression_performance(baseline, quality_metric="ssim")
-    plot_superresolution_table(baseline, "database2.json")
+    # plot_frame_compression_performance(baseline, quality_metric="psnr")
+    # plot_frame_compression_performance(baseline, quality_metric="ssim")
+    # plot_superresolution_table(baseline, "database2.json")
     plot_compression_curve(baseline, "database2.json", quality_metric="ssim")
     plot_compression_curve(baseline, "database2.json", quality_metric="psnr")
     plot_output_files_size(baseline)
