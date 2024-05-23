@@ -23,10 +23,26 @@ Just full test.
 def get_line_type(key):
     key_dict = {"hevc": "-",
                 "avc": "-",
+                ##################################
                 "model-bez-augmentacji-128": "-",
                 "model-bez-augmentacji-512": "--",
                 "model-bez-augmentacji-1024": "-",
-                "model-bez-augmentacji-2048": "--"
+                "model-bez-augmentacji-2048": "--",
+                ##################################
+                "VCVSR 128": "-",
+                "VCVSR 512": "--",
+                "VCVSR 1024": "-",
+                "VCVSR 2048": "--",
+                ##################################
+                "VSR 128": "-",
+                "VSR 512": "--",
+                "VSR 1024": "-",
+                "VSR 2048": "--",
+                ##################################
+                "Baseline VC 128": "-",
+                "Baseline VC 512": "--",
+                "Baseline VC 1024": "-",
+                "Baseline VC 2048": "--",
                 }
     return key_dict[key]
 
@@ -35,12 +51,78 @@ def get_color(key):
     # Okabe Ito color pallete
     key_dict = {"hevc": "#D55E00",
                 "avc": "#E69F00",
+                ########################################
                 "model-bez-augmentacji-128": "#56B4E9",
                 "model-bez-augmentacji-512": "#0072B2",
                 "model-bez-augmentacji-1024": "#009E73",
-                "model-bez-augmentacji-2048": "#000000"
+                "model-bez-augmentacji-2048": "#000000",
+                ########################################
+                "VCVSR 128": "#56B4E9",
+                "VCVSR 512": "#0072B2",
+                "VCVSR 1024": "#009E73",
+                "VCVSR 2048": "#000000",
+                ########################################
+                "VSR 128": "#56B4E9",
+                "VSR 512": "#0072B2",
+                "VSR 1024": "#009E73",
+                "VSR 2048": "#000000",
+                ########################################
+                "Baseline VC 128": "#56B4E9",
+                "Baseline VC 512": "#0072B2",
+                "Baseline VC 1024": "#009E73",
+                "Baseline VC 2048": "#000000",
                 }
     return key_dict[key]
+
+
+def plot_output_files_size(model_databases: List[str]):
+    filenames = ["klatka kluczowa", "wektory ruchu w podprzestrzeni", "wektory ruchu w hiperprzestrzeni",
+                 "rezydua w podprzestrzeni", "rezydua w hiperprzestrzeni"]
+    plot_data = {}
+    for database_path in model_databases:
+        with open(database_path, "r") as f:
+            database = json.load(f)
+        motion_bpp = 0
+        residual_bpp = 0
+        keyframe_bpp = 0
+        for data_entry in database["data"]:
+            for bpp, filename in zip(data_entry["bpp"], filenames):
+                keyframe_bpp = keyframe_bpp + bpp if filename.startswith("klatka") else keyframe_bpp
+                motion_bpp = motion_bpp + bpp if filename.startswith("wektory") else motion_bpp
+                residual_bpp = residual_bpp + bpp if filename.startswith("rezydua") else residual_bpp
+        sum_bpp = motion_bpp + residual_bpp + keyframe_bpp
+        keyframe_bpp = round(keyframe_bpp * 100 / sum_bpp, 2)
+        motion_bpp = round(motion_bpp * 100 / sum_bpp, 2)
+        residual_bpp = round(residual_bpp * 100 / sum_bpp, 2)
+        plot_data[database["model_name"]] = (keyframe_bpp, motion_bpp, residual_bpp)
+
+    keyframes = []
+    motions = []
+    residuals = []
+    model_names = [f"λ={key.split('-')[-1]}" for key in plot_data.keys()]
+    for i, (key, values) in enumerate(plot_data.items()):
+        keyframes.append(values[0])
+        motions.append(values[1])
+        residuals.append(values[2])
+
+    bar_width = 1 / (len(keyframes) + 1)
+    br1 = np.arange(len(keyframes))
+    br2 = [x + bar_width for x in br1]
+    br3 = [x + bar_width for x in br2]
+
+    # Make the plot
+    plt.bar(br1, keyframes, color="#56B4E9", width=bar_width,
+            edgecolor='grey', label="klatka kluczowa")
+    plt.bar(br2, motions, color="#0072B2", width=bar_width,
+            edgecolor='grey', label="wektory ruchu")
+    plt.bar(br3, residuals, color="#009E73", width=bar_width,
+            edgecolor='grey', label="rezydua")
+
+    plt.xlabel('Model')
+    plt.ylabel('Rozmiar względny [%]')
+    plt.legend()
+    plt.xticks([r + bar_width for r in range(4)], labels=model_names)
+    plt.show()
 
 
 def plot_superresolution_table(model_databases: List[str], ffmpeg_database: str):
@@ -215,9 +297,13 @@ def plot_frame_compression_performance(model_databases: list, quality_metric: st
 
 
 if __name__ == "__main__":
-    # checkpoints = ["../outputs/VCVSR 2048/model_30.pth", "../outputs/baseline_no_aug1024/model_30.pth"]
     checkpoints = ["../outputs/baseline_no_aug128/model_30.pth", "../outputs/baseline_no_aug512/model_30.pth",
                    "../outputs/baseline_no_aug1024/model_30.pth", "../outputs/baseline_no_aug2048/model_30.pth"]
+    # checkpoints = ["../outputs/Baseline VC 128/model_30.pth", "../outputs/Baseline VC 512/model_30.pth",
+    #                "../outputs/Baseline VC 1024/model_30.pth", "../outputs/Baseline VC 2048/model_30.pth",
+    #                "../outputs/VSR 128/model_30.pth", "../outputs/VSR 512/model_30.pth",
+    #                "../outputs/VSR 1024/model_30.pth", "../outputs/VSR 2048/model_30.pth"
+    #                ]
     # plot_frame_results_on_given_video(checkpoints, r"C:\Users\CamaroTheBOSS\Downloads", 25, "YachtRide")
     # Generate eval databases
     # uvg = UVGDataset("../../Datasets/UVG", 2, max_frames=100)
@@ -230,8 +316,9 @@ if __name__ == "__main__":
 
     # Plot eval databases
     baseline = [f"{str(pathlib.Path(chkpt).parent)}/uvg_eval.json" for chkpt in checkpoints]
-    # plot_frame_compression_performance(baseline, quality_metric="psnr")
-    # plot_frame_compression_performance(baseline, quality_metric="ssim")
+    plot_frame_compression_performance(baseline, quality_metric="psnr")
+    plot_frame_compression_performance(baseline, quality_metric="ssim")
     plot_superresolution_table(baseline, "database2.json")
-    # plot_compression_curve(baseline, "database2.json", quality_metric="ssim")
-    # plot_compression_curve(baseline, "database2.json", quality_metric="psnr")
+    plot_compression_curve(baseline, "database2.json", quality_metric="ssim")
+    plot_compression_curve(baseline, "database2.json", quality_metric="psnr")
+    plot_output_files_size(baseline)
