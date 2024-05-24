@@ -20,13 +20,14 @@ from metrics import psnr, ssim
 @torch.no_grad()
 def evaluate_model(dataloader: DataLoader, model: nn.Module, output_dir: str):
     model.eval()
-    metric_dict = {"vc_psnr": 0, "vc_ssim": 0, "vsr_psnr": 0, "vsr_ssim": 0, "vc_bpp": 0, "vc_count_nonzeros": 0}
+    metric_dict = {"vc_psnr": 0, "vc_ssim": 0, "vsr_psnr": 0, "vsr_ssim": 0, "vc_bpp": 0, "vc_nonzeros_offsets": 0,
+                   "vc_nonzeros_residuals": 0}
     with torch.no_grad():
         for idx, batch in enumerate(tqdm(dataloader)):
             lqs = batch[0].to(model.device)
             hqs = batch[1].to(model.device)
 
-            reconstructed, upscaled, bpps, nonzeros = [], [], [], []
+            reconstructed, upscaled, bpps, nonzeros_offsets, nonzeros_residuals = [], [], [], [], []
             previous_frames = lqs[:, 0]
             for i in range(1, lqs.shape[1]):
                 outputs = model(previous_frames, lqs[:, i], hqs[:, i])
@@ -34,14 +35,16 @@ def evaluate_model(dataloader: DataLoader, model: nn.Module, output_dir: str):
                 upscaled.append(outputs.upscaled)
                 previous_frames = outputs.reconstructed
                 bpps.append(sum([value.item() if "bits" in key else 0 for key, value in outputs.loss_vc.items()]))
-                nonzeros.append(outputs.additional_info["count_compressed_data_non_zeros"])
+                nonzeros_offsets.append(outputs.additional_info["count_non_zeros_offsets"])
+                nonzeros_residuals.append(outputs.additional_info["count_non_zeros_residuals"])
 
             metric_dict["vc_psnr"] += psnr(torch.stack(reconstructed).permute(1, 0, 2, 3, 4), lqs[:, 1:]).item()
             metric_dict["vc_ssim"] += ssim(torch.stack(reconstructed).permute(1, 0, 2, 3, 4), lqs[:, 1:]).item()
             metric_dict["vsr_psnr"] += psnr(torch.stack(upscaled).permute(1, 0, 2, 3, 4), hqs[:, 1:]).item()
             metric_dict["vsr_ssim"] += ssim(torch.stack(upscaled).permute(1, 0, 2, 3, 4), hqs[:, 1:]).item()
             metric_dict["vc_bpp"] += sum(bpps) / len(bpps)
-            metric_dict["vc_count_nonzeros"] += sum(nonzeros) * len(dataloader)
+            metric_dict["vc_nonzeros_offsets"] += sum(nonzeros_offsets) * len(dataloader)
+            metric_dict["vc_nonzeros_residuals"] += sum(nonzeros_residuals) * len(dataloader)
 
     save_video(torch.stack(reconstructed).permute(1, 0, 2, 3, 4)[0], f"{output_dir}/compressed")
     save_video(torch.stack(upscaled).permute(1, 0, 2, 3, 4)[0], f"{output_dir}/upscaled")
@@ -90,9 +93,8 @@ def main(rdr):
     vsr = True
     checkpoint_path = None
     wandb_enabled = True
-    run_name = f"VCVSR {rate_distortion}"
-    run_description = (f"Baseline for experiments. Augmentation was used. Both tasks are trained. RDR is used"
-                       f"in shared losses and VC loss\n")
+    run_name = f"SRRDR VCVSR {rate_distortion}"
+    run_description = f"Rate distortion ratio has impact on super-resolution"
     if wandb_enabled:
         wandb.init(project="VSRVC", name=run_name)
 
@@ -114,6 +116,7 @@ def main(rdr):
 
     try:
         for epoch in range(epochs):
+            metric_dict = evaluate_model(test_dataloader, model, f"{output_dir}/epoch_{epoch + 1}")
             loss_dict = train_epoch(train_dataloader, model, optimizer, lr_scheduler, epoch)
             metric_dict = evaluate_model(test_dataloader, model, f"{output_dir}/epoch_{epoch + 1}")
             print(metric_dict)
