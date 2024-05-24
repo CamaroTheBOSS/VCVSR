@@ -19,8 +19,10 @@ from utils import interpolate_video
 def _read_data(chkpt_paths: List[str], dataset: UVGDataset, index: int, indexes: torch.Tensor):
     lqs, hqs = dataset.__getitem__(index)
     transform = ToTensor()
-    vc_data = [torch.index_select(lqs.unsqueeze(0), 1, indexes)]
-    vsr_data = [torch.index_select(hqs.unsqueeze(0), 1, indexes)]
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    indexes = indexes.to(device)
+    vc_data = [torch.index_select(lqs.unsqueeze(0), 1, indexes).cpu()]
+    vsr_data = [torch.index_select(hqs.unsqueeze(0), 1, indexes).cpu()]
     for chkpt in chkpt_paths:
         print(f"Reading data for checkpoint: {chkpt}")
         vc_root_path = os.path.join(str(pathlib.Path(chkpt).parent), "evaluate_compression")
@@ -128,7 +130,7 @@ def superresolution_mosaic(chkpt_paths: List[str], mosaic_like_video: Union[str,
     for i in range(nrows):
         row = []
         for j in range(ncols):
-            frame = data[curr_index].squeeze(0).squeeze(0)
+            frame = data[curr_index].squeeze(0).squeeze(0).cpu()
             frame = frame[:, y:min(y+h, frame.shape[1]), x:min(x+w, frame.shape[2])]
             row.append(frame)
             if inter_pad[1] > 0 and j < (ncols - 1):
@@ -213,11 +215,12 @@ def how_many_layers(checkpoints):
 
 
 if __name__ == "__main__":
-    checkpoints = ["../outputs/baseline_no_aug128/model_30.pth", "../outputs/baseline_no_aug512/model_30.pth",
-                   "../outputs/baseline_no_aug1024/model_30.pth", "../outputs/baseline_no_aug2048/model_30.pth"]
+    checkpoints = ["../outputs/VCVSR 128/model_30.pth", "../outputs/VCVSR 512/model_30.pth",
+                   "../outputs/VCVSR 1024/model_30.pth", "../outputs/VCVSR 2048/model_30.pth"]
+    # checkpoints = ["../outputs/baseline_no_aug128/model_30.pth", "../outputs/baseline_no_aug512/model_30.pth",
+    #                "../outputs/baseline_no_aug1024/model_30.pth", "../outputs/baseline_no_aug2048/model_30.pth"]
     # superresolution_mosaic(checkpoints, "YachtRide", ncols=3, save_root="../outputs", inter_pad=(30, 2),
     #                        box=(800, 700, 100, 100))
-    # compression_mosaic(checkpoints, "YachtRide", ncols=3, save_root="../outputs", inter_pad=(5, 2),
-    #                    generate_data=True)
+    compression_mosaic(checkpoints, "YachtRide", ncols=3, save_root="../outputs", inter_pad=(5, 2))
     generated_video_mosaic("../outputs/baseline_no_aug2048/generated_video/generated", 15, ncols=3,
                            save_root="../outputs", inter_pad=(3, 3))
