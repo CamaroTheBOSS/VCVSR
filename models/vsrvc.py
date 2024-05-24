@@ -437,8 +437,9 @@ class VSRVCModel(nn.Module):
 
         # [SR branch] Loss function
         loss_vsr = {
-            "vsr_recon": self.reconstruction_loss(upscaled_frame, current_hqf) if current_hqf is not None else None,
+            "vsr_recon": self.rdr * self.reconstruction_loss(upscaled_frame, current_hqf) if current_hqf is not None else None,
         }
 
-        additional_info = {"count_compressed_data_non_zeros": count_nonzeros_offsets + count_nonzeros_residuals}
+        additional_info = {"count_non_zeros_offsets": count_nonzeros_offsets,
+                           "count_non_zeros_residuals": count_nonzeros_residuals}
         return VSRVCOutput(reconstructed_frame, upscaled_frame, loss_vc, loss_vsr, loss_shared, additional_info)
