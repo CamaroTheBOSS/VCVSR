@@ -116,7 +116,6 @@ def main(rdr):
 
     try:
         for epoch in range(epochs):
-            metric_dict = evaluate_model(test_dataloader, model, f"{output_dir}/epoch_{epoch + 1}")
             loss_dict = train_epoch(train_dataloader, model, optimizer, lr_scheduler, epoch)
             metric_dict = evaluate_model(test_dataloader, model, f"{output_dir}/epoch_{epoch + 1}")
             print(metric_dict)
