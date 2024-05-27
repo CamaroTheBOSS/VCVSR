@@ -1,4 +1,5 @@
 import os
+import time
 from glob import glob
 from typing import Tuple
 
@@ -12,26 +13,32 @@ from kornia.augmentation import ColorJiggle, RandomCrop, RandomVerticalFlip, Ran
 
 
 class Vimeo90k(Dataset):
-    def __init__(self, root: str, scale: int, test_mode: bool = False, crop_size: Tuple[int, int] = (256, 384)):
+    def __init__(self, root: str, scale: int, test_mode: bool = False, crop_size: Tuple[int, int] = (256, 384), augment: bool = False):
         super().__init__()
         self.root = root
         self.sequences = os.path.join(root, "train")
         self.txt_file = os.path.join(root, "sep_testlist.txt" if test_mode else "sep_trainlist.txt")
-        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
         self.scale = scale
         self.crop_size = crop_size
         self.test_mode = test_mode
         self.videos = self.load_paths()
         self.transform = Compose([ToTensor()])
-        self.augment = Compose([
-            ColorJiggle(brightness=(0.85, 1.15), contrast=(0.75, 1.15), saturation=(0.75, 1.25), hue=(-0.02, 0.02),
-                        same_on_batch=True),
-            RandomCrop(size=crop_size, same_on_batch=True),
-            RandomVerticalFlip(same_on_batch=True),
-            RandomHorizontalFlip(same_on_batch=True),
-            RandomRotation(degrees=180, same_on_batch=True),
-        ])
+        self.augment = augment
+        if augment:
+            self.augmentation = Compose([
+                ColorJiggle(brightness=(0.85, 1.15), contrast=(0.75, 1.15), saturation=(0.75, 1.25), hue=(-0.02, 0.02),
+                            same_on_batch=True),
+                RandomCrop(size=crop_size, same_on_batch=True),
+                RandomVerticalFlip(same_on_batch=True),
+                RandomHorizontalFlip(same_on_batch=True),
+                RandomRotation(degrees=180, same_on_batch=True),
+            ])
+        else:
+            self.augmentation = Compose([
+                RandomCrop(size=crop_size, same_on_batch=True),
+            ])
+        self.resize = Resize((int(crop_size[0] / self.scale), int(crop_size[1] / self.scale)))
 
         assert os.path.exists(self.root)
         assert os.path.exists(self.txt_file)
@@ -51,15 +58,16 @@ class Vimeo90k(Dataset):
         video = []
         for path in self.videos[index]:
             video.append(self.transform(Image.open(path).convert("RGB")))
-        return torch.stack(video).to(self.device)
+        return torch.stack(video)
 
     def __getitem__(self, index: int):
         video = self.read_video(index)
-        hqs = self.augment(video) if not self.test_mode else video[:, :, :self.crop_size[0], :self.crop_size[1]]
-        n, c, h, w = hqs.shape
-        lqs = Resize((int(h / self.scale), int(w / self.scale)))(hqs)
+        if not self.augment or self.test_mode:
+            hqs = self.augmentation(video) if not self.test_mode else video[:, :, :self.crop_size[0], :self.crop_size[1]]
+            lqs = self.resize(hqs)
+            return lqs, hqs
+        return video
 
-        return lqs, hqs
 
     def __len__(self) -> int:
         return len(self.videos)

@@ -57,14 +57,19 @@ def train_epoch(dataloader: DataLoader, model: nn.Module, optimizer: Optimizer, 
     metric_logger = MetricLogger("   ")
     loss_wandb = {"epoch": 0}
     for idx, batch in enumerate(metric_logger(dataloader, header=f"Epoch [{epoch}]", print_every=10)):
-        lqs = batch[0].to(model.device)
-        hqs = batch[1].to(model.device)
+        if dataloader.dataset.augment:
+            video = batch.to(model.device)
+            hqs = torch.stack([dataloader.dataset.augmentation(vid) for vid in video])
+            lqs = torch.stack([dataloader.dataset.resize(vid) for vid in hqs])
+        else:
+            lqs = batch[0].to(model.device)
+            hqs = batch[1].to(model.device)
         outputs = model(lqs[:, 0], lqs[:, 1], hqs[:, 1])
         loss_vc = sum(loss_value for loss_value in outputs.loss_vc.values())
         loss_vsr = sum(loss_value for loss_value in outputs.loss_vsr.values())
         loss_shared = sum(loss_value for loss_value in outputs.loss_shared.values())
-
         loss = loss_shared + (loss_vc if model.vc else 0) + (loss_vsr if model.vsr else 0)
+
         loss_wandb = add_dict(add_dict(add_dict(loss_wandb, outputs.loss_vc), outputs.loss_vsr), outputs.loss_shared)
         loss_wandb["epoch"] += loss.item()
 
@@ -92,8 +97,9 @@ def main(rdr):
     vc = True
     vsr = True
     checkpoint_path = None
-    wandb_enabled = True
-    run_name = f"SRRDR VCVSR {rate_distortion}"
+    wandb_enabled = False
+    augment = True
+    run_name = f"TEST105 {rate_distortion}"
     run_description = f"Rate distortion ratio has impact on super-resolution"
     if wandb_enabled:
         wandb.init(project="VSRVC", name=run_name)
@@ -104,8 +110,8 @@ def main(rdr):
                f"checkpoint_path: {checkpoint_path}, wandb: {wandb_enabled}, run_name: {run_name}"
                f"rate_distortion_ratio: {rate_distortion}\n\nRUN DESCRIPTION: \n{run_description}\n")
 
-    train_set = Vimeo90k("../Datasets/VIMEO90k", scale)
-    test_set = Vimeo90k("../Datasets/VIMEO90k", scale, test_mode=True)
+    train_set = Vimeo90k("../Datasets/VIMEO90k", scale, augment=augment)
+    test_set = Vimeo90k("../Datasets/VIMEO90k", scale, test_mode=True, augment=augment)
     train_dataloader = DataLoader(train_set, batch_size=batch, shuffle=True, drop_last=True)
     test_dataloader = DataLoader(test_set, batch_size=batch, shuffle=False, drop_last=True)
 
