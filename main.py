@@ -6,11 +6,12 @@ import torch
 import wandb
 from torch import nn
 from torch.optim import AdamW, Optimizer
-from torch.optim.lr_scheduler import CosineAnnealingLR, LRScheduler
+from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 
 from tqdm.auto import tqdm
-from datasets import Vimeo90k
+from datasets import Vimeo90k, UVGDataset
+from evaluation.full_evaluation import test_uvg
 from models.vsrvc import load_model
 from utils import init_run_dir, MetricLogger, add_dict, FileLogger, log_to_wandb, save_video, save_checkpoint, \
     MyCosineAnnealingLR
@@ -94,13 +95,13 @@ def main(rdr):
     epochs = 30
     checkpoint = 5
     rate_distortion = rdr
-    vc = True
     vsr = True
+    vc = True
     checkpoint_path = None
-    wandb_enabled = False
-    augment = True
-    run_name = f"TEST105 {rate_distortion}"
-    run_description = f"Rate distortion ratio has impact on super-resolution"
+    wandb_enabled = True
+    augment = False
+    run_name = f"{'VSR' if vsr else ''}{'VC' if vc else ''} {'AUG' if augment else 'NAUG'} {rate_distortion}"
+    run_description = f"VSRVC augmented"
     if wandb_enabled:
         wandb.init(project="VSRVC", name=run_name)
 
@@ -131,6 +132,8 @@ def main(rdr):
             if (epoch + 1) % checkpoint == 0:
                 kwargs = {"model_name": run_name, "rate_distortion_ratio": model.rdr, "vc": model.vc, "vsr": model.vsr}
                 save_checkpoint(model, output_dir, epoch, only_last=True, **kwargs)
+        uvg = UVGDataset("../../Datasets/UVG", 2, max_frames=100)
+        test_uvg(model, f"{output_dir}/uvg_eval.json", uvg, save_root=output_dir)
 
     except Exception:
         traceback.print_exc(file=sys.stdout)
