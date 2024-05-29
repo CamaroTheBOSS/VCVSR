@@ -179,7 +179,7 @@ def eval_estimated_bits(model: nn.Module, dataset, examples: list = None, save_r
 
 if __name__ == "__main__":
     # chkpt = "../outputs/baseline_no_aug2048/model_30.pth"
-    chkpt = "../outputs/VCVSR 2048/model_30.pth"
+    chkpt = "../outputs/VSRVC AUG 2048/model_30.pth"
     model = load_model(chkpt)
     model.eval()
     save_root = str(pathlib.Path(chkpt).parent)
@@ -190,7 +190,7 @@ if __name__ == "__main__":
     # draw_model_distributions_deriv(model)
     # eval_estimated_bits(model, uvg, [0], save_root=save_root)
     # eval_upscale_consistency(model, reds, save_root=save_root)
-    eval_compression(model, dataset, [5], save_root=save_root, keyframe_format="jpg")
+    eval_compression(model, dataset, [6], save_root=save_root, keyframe_format="jpg")
     # eval_generation(model, dataset, 3, save_root=save_root)
     # eval_replaced_keyframe(model, dataset, r"D:\Code\Datasets\UVG\YachtRide\001.png", [3], save_root=save_root)
     # eval_motion_transfer(model, dataset, 6, 3, save_root)
