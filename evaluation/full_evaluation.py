@@ -9,10 +9,9 @@ import torch
 import pandas as pd
 
 from datasets import UVGDataset
-from evaluation.ffmpeg import get_psnr_ssim_tensor_input, run_compression, get_psnr_ssim_video_input
-from evaluation.test import eval_compression
+from evaluation.ffmpeg import get_psnr_ssim_tensor_input
 from models.vsrvc import VSRVCModel, load_model
-from prepare_uvg import get_keywords, relevant
+from evaluation.prepare_uvg import get_keywords
 
 """
 File where every aspect of the model is evaluated on full UVG dataset without any flexible configurations. 
@@ -249,8 +248,8 @@ def plot_compression_curve(model_databases: List[str], ffmpeg_database: str):
 
 
 @torch.no_grad()
-def full_eval_compression(model: VSRVCModel, dst_path: str, dataset: UVGDataset,
-                          keyframe_format: str = "png", save_root=None):
+def test_uvg(model: VSRVCModel, dst_path: str, dataset: UVGDataset, keyframe_format: str = "jpg", save_root=None):
+    model.eval()
     if not dst_path.endswith(".json"):
         raise Exception("dst_path must be a valid path to json file")
     if keyframe_format not in ["png", "jpg"]:
@@ -325,7 +324,7 @@ if __name__ == "__main__":
                    "../outputs/baseline_no_aug1024/model_30.pth", "../outputs/baseline_no_aug2048/model_30.pth"]
     checkpoints2 = ["../outputs/VCVSR 128/model_30.pth", "../outputs/VCVSR 512/model_30.pth",
                    "../outputs/VCVSR 1024/model_30.pth", "../outputs/VCVSR 2048/model_30.pth"]
-    plot_compression_comparison(get_baseline(checkpoints1), get_baseline(checkpoints2), "Modele bez augmentacji", "Modele z augmentacją")
+    #
     # checkpoints = ["../outputs/Baseline VC 128/model_30.pth", "../outputs/Baseline VC 512/model_30.pth",
     #                "../outputs/Baseline VC 1024/model_30.pth", "../outputs/Baseline VC 2048/model_30.pth",
     #                "../outputs/VSR 128/model_30.pth", "../outputs/VSR 512/model_30.pth",
@@ -333,19 +332,20 @@ if __name__ == "__main__":
     #                ]
     # plot_frame_results_on_given_video(checkpoints, r"C:\Users\CamaroTheBOSS\Downloads", 25, "YachtRide")
     # Generate eval databases
-    # uvg = UVGDataset("../../Datasets/UVG", 2, max_frames=100)
-    # for chkpt in checkpoints:
-    #     model = load_model(chkpt)
-    #     model.eval()
-    #     save_root = str(pathlib.Path(chkpt).parent)
-    #     name = save_root.split("\\")[-1]
-    #     full_eval_compression(model, f"{save_root}/uvg_eval.json", uvg, keyframe_format="jpg", save_root=save_root)
+    checkpoints = ["../outputs/VSRVC AUG 2048/model_30.pth"]
+    uvg = UVGDataset("../../Datasets/UVG", 2, max_frames=100)
+    for chkpt in checkpoints:
+        model = load_model(chkpt)
+        model.eval()
+        save_root = str(pathlib.Path(chkpt).parent)
+        name = save_root.split("\\")[-1]
+        test_uvg(model, f"{save_root}/uvg_eval.json", uvg, keyframe_format="jpg", save_root=save_root)
 
     # Plot eval databases
-    # baseline = [f"{str(pathlib.Path(chkpt).parent)}/uvg_eval.json" for chkpt in checkpoints]
-    # plot_compression_curve(baseline, "database2.json")
+    baseline = [f"{str(pathlib.Path(chkpt).parent)}/uvg_eval.json" for chkpt in checkpoints]
+    plot_compression_curve(baseline, "database2.json")
     # plot_frame_compression_performance(baseline, quality_metric="psnr")
     # plot_frame_compression_performance(baseline, quality_metric="ssim")
-    # plot_superresolution_table(baseline, "database2.json")
+    plot_superresolution_table(baseline, "database2.json")
     # plot_output_files_size(baseline)
 
