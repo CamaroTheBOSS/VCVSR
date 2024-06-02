@@ -53,6 +53,12 @@ class DirectEntropyCoder(nn.Module):
         return torch.sum(torch.clamp(-1.0 * torch.log(prob) / math.log(2.0), 0, 50))
 
 
+def qint_to_int(x: torch.Tensor, scale):
+    if x.dtype == torch.qint8:
+        return x.int_repr()
+    return x / scale
+
+
 class HyperpriorEntropyCoder(nn.Module):
     """
     Estimate bits with hyperprior entropy model
@@ -102,7 +108,10 @@ class HyperpriorEntropyCoder(nn.Module):
         values = torch.gather(x.repeat(len(cdf), 1), 1, dist_indices)
         return values[:, :n_values]
 
-    def forward(self, data_prior: torch.Tensor, data_hyperprior: torch.Tensor, mu_sigmas: torch.Tensor):
+    def forward(self, data_prior: torch.Tensor, data_hyperprior: torch.Tensor, mu_sigmas: torch.Tensor,
+                scale_prior, zero_point_prior, scale_hyperprior, zero_point_hyperprior):
+        data_prior = qint_to_int(data_prior, scale_prior)
+        data_hyperprior = qint_to_int(data_hyperprior, scale_hyperprior)
         hyperprior_bits = self.distribution(data_hyperprior)
         prior_bits, mu, sigmas = self.estimate_prior_bits(data_prior, mu_sigmas)
         return prior_bits, hyperprior_bits, mu, sigmas

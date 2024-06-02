@@ -28,7 +28,7 @@ class Vimeo90k(Dataset):
         if augment:
             self.augmentation = Compose([
                 ColorJiggle(brightness=(0.85, 1.15), contrast=(0.75, 1.15), saturation=(0.75, 1.25), hue=(-0.02, 0.02),
-                            same_on_batch=True, p=0.5),
+                            same_on_batch=True, p=1),
                 RandomCrop(size=crop_size, same_on_batch=True),
                 RandomVerticalFlip(same_on_batch=True, p=0.5),
                 RandomHorizontalFlip(same_on_batch=True, p=0.5),

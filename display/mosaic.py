@@ -215,12 +215,14 @@ def how_many_layers(checkpoints):
 
 
 if __name__ == "__main__":
-    checkpoints = ["../outputs/VCVSR 128/model_30.pth", "../outputs/VCVSR 512/model_30.pth",
-                   "../outputs/VCVSR 1024/model_30.pth", "../outputs/VCVSR 2048/model_30.pth"]
+    # checkpoints = ["../outputs/VCVSR 128/model_30.pth", "../outputs/VCVSR 512/model_30.pth",
+    #                "../outputs/VCVSR 1024/model_30.pth", "../outputs/VCVSR 2048/model_30.pth"]
     # checkpoints = ["../outputs/baseline_no_aug128/model_30.pth", "../outputs/baseline_no_aug512/model_30.pth",
     #                "../outputs/baseline_no_aug1024/model_30.pth", "../outputs/baseline_no_aug2048/model_30.pth"]
+    checkpoints = ["../outputs/VSRVC AUG 128/model_30.pth", "../outputs/VSRVC AUG 512/model_30.pth",
+                    "../outputs/VSRVC AUG 1024/model_30.pth", "../outputs/VSRVC AUG 2048/model_30.pth"]
     # superresolution_mosaic(checkpoints, "YachtRide", ncols=3, save_root="../outputs", inter_pad=(30, 2),
     #                        box=(800, 700, 100, 100))
-    compression_mosaic(checkpoints, "YachtRide", ncols=3, save_root="../outputs", inter_pad=(5, 2))
-    generated_video_mosaic("../outputs/baseline_no_aug2048/generated_video/generated", 15, ncols=3,
-                           save_root="../outputs", inter_pad=(3, 3))
+    compression_mosaic(checkpoints, "YachtRide", ncols=3, save_root="../outputs", inter_pad=(5, 2), generate_data=True)
+    # generated_video_mosaic("../outputs/baseline_no_aug2048/generated_video/generated", 15, ncols=3,
+    #                        save_root="../outputs", inter_pad=(3, 3))

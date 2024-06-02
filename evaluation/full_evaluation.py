@@ -320,10 +320,12 @@ def get_baseline(checkpoints):
 
 
 if __name__ == "__main__":
-    checkpoints1 = ["../outputs/baseline_no_aug128/model_30.pth", "../outputs/baseline_no_aug512/model_30.pth",
-                   "../outputs/baseline_no_aug1024/model_30.pth", "../outputs/baseline_no_aug2048/model_30.pth"]
-    checkpoints2 = ["../outputs/VCVSR 128/model_30.pth", "../outputs/VCVSR 512/model_30.pth",
-                   "../outputs/VCVSR 1024/model_30.pth", "../outputs/VCVSR 2048/model_30.pth"]
+    # checkpoints1 = ["../outputs/baseline_no_aug128/model_30.pth", "../outputs/baseline_no_aug512/model_30.pth",
+    #                "../outputs/baseline_no_aug1024/model_30.pth", "../outputs/baseline_no_aug2048/model_30.pth"]
+    # checkpoints2 = ["../outputs/VCVSR 128/model_30.pth", "../outputs/VCVSR 512/model_30.pth",
+    #                "../outputs/VCVSR 1024/model_30.pth", "../outputs/VCVSR 2048/model_30.pth"]
+    checkpoints3 = ["../outputs/VSRVC AUG 128/model_30.pth", "../outputs/VSRVC AUG 512/model_30.pth",
+                    "../outputs/VSRVC AUG 1024/model_30.pth", "../outputs/VSRVC AUG 2048/model_30.pth"]
     #
     # checkpoints = ["../outputs/Baseline VC 128/model_30.pth", "../outputs/Baseline VC 512/model_30.pth",
     #                "../outputs/Baseline VC 1024/model_30.pth", "../outputs/Baseline VC 2048/model_30.pth",
@@ -334,7 +336,7 @@ if __name__ == "__main__":
     # Generate eval databases
     checkpoints = ["../outputs/VSRVC AUG 2048/model_30.pth"]
     uvg = UVGDataset("../../Datasets/UVG", 2, max_frames=100)
-    for chkpt in checkpoints:
+    for chkpt in checkpoints3:
         model = load_model(chkpt)
         model.eval()
         save_root = str(pathlib.Path(chkpt).parent)
@@ -342,7 +344,7 @@ if __name__ == "__main__":
         test_uvg(model, f"{save_root}/uvg_eval.json", uvg, keyframe_format="jpg", save_root=save_root)
 
     # Plot eval databases
-    baseline = [f"{str(pathlib.Path(chkpt).parent)}/uvg_eval.json" for chkpt in checkpoints]
+    baseline = [f"{str(pathlib.Path(chkpt).parent)}/uvg_eval.json" for chkpt in checkpoints3]
     plot_compression_curve(baseline, "database2.json")
     # plot_frame_compression_performance(baseline, quality_metric="psnr")
     # plot_frame_compression_performance(baseline, quality_metric="ssim")

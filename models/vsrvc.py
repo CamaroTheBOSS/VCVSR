@@ -122,20 +122,23 @@ class HyperpriorCompressor(nn.Module):
         if self.training:
             noise = torch.nn.init.uniform_(torch.zeros_like(x), zero_point.item() - scale.item(),
                                            zero_point.item() + scale.item())
-            return x + noise
+            return x + noise, scale, zero_point
         quantized_x = torch.quantize_per_tensor(x, scale, zero_point, torch.qint8)
-        return quantized_x
+        return quantized_x, scale, zero_point
 
     def train_compression_decompression(self, data: torch.Tensor):
         data_prior = self.data_encoder(data)
-        quantized_data_prior = qint_to_float(self.quantize(data_prior))
+        qint_data_prior, scale_prior, zero_point_prior = self.quantize(data_prior)
+        quantized_data_prior = qint_to_float(qint_data_prior)
 
         data_hyperprior = self.hyperprior_encoder(data_prior)
-        quantized_data_hyperprior = qint_to_float(self.quantize(data_hyperprior))
+        qint_data_hyperprior, scale_hyperprior, zero_point_hyperprior = self.quantize(data_hyperprior)
+        quantized_data_hyperprior = qint_to_float(qint_data_hyperprior)
 
         mu_sigmas = self.hyperprior_decoder(quantized_data_hyperprior)
         prior_bits, hyperprior_bits, _, _ = self.bit_estimator(quantized_data_prior, quantized_data_hyperprior,
-                                                               mu_sigmas)
+                                                               mu_sigmas, scale_prior, zero_point_prior,
+                                                               scale_hyperprior, zero_point_hyperprior)
 
         # sigmas = mu_sigmas[:, quantized_data_prior.shape[1]:]
         reconstructed_data = self.data_decoder(torch.cat([quantized_data_prior, mu_sigmas], dim=1))
@@ -480,7 +483,7 @@ class VSRVCModel(nn.Module):
 
         # [SR branch] Loss function
         loss_vsr = {
-            "vsr_recon": self.rdr * self.reconstruction_loss(upscaled_frame,
+            "vsr_recon": self.reconsatruction_loss(upscaled_frame,
                                                              current_hqf) if current_hqf is not None else None,
         }
 

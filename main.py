@@ -98,10 +98,10 @@ def main(rdr):
     vsr = True
     vc = True
     checkpoint_path = None
-    wandb_enabled = True
-    augment = False
-    run_name = f"{'VSR' if vsr else ''}{'VC' if vc else ''} {'AUG' if augment else 'NAUG'} {rate_distortion}"
-    run_description = f"VSRVC augmented"
+    wandb_enabled = False
+    augment = True
+    run_name = f"QUANT2 {'VSR' if vsr else ''}{'VC' if vc else ''} {'AUG' if augment else 'NAUG'} {rate_distortion}"
+    run_description = f"VSRVC augmented bez RDR dla SR"
     if wandb_enabled:
         wandb.init(project="VSRVC", name=run_name)
 
@@ -132,7 +132,7 @@ def main(rdr):
             if (epoch + 1) % checkpoint == 0:
                 kwargs = {"model_name": run_name, "rate_distortion_ratio": model.rdr, "vc": model.vc, "vsr": model.vsr}
                 save_checkpoint(model, output_dir, epoch, only_last=True, **kwargs)
-        uvg = UVGDataset("../../Datasets/UVG", 2, max_frames=100)
+        uvg = UVGDataset("../Datasets/UVG", 2, max_frames=100)
         test_uvg(model, f"{output_dir}/uvg_eval.json", uvg, save_root=output_dir)
 
     except Exception:
