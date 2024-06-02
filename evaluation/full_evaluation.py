@@ -30,6 +30,17 @@ def get_line_type(key):
     return key_dict[key]
 
 
+def get_line_type_with_index(index):
+    key_dict = {"hevc": "-",
+                "avc": "-",
+                0: "-",
+                1: "--",
+                2: "-",
+                3: "--",
+                }
+    return key_dict[index]
+
+
 def get_color(key):
     # Okabe Ito color pallete
     key_dict = {"hevc": "#D55E00",
@@ -40,6 +51,18 @@ def get_color(key):
                 2048: "#000000",
                 }
     return key_dict[key]
+
+
+def get_color_with_index(index):
+    # Okabe Ito color pallete
+    key_dict = {"hevc": "#D55E00",
+                "avc": "#E69F00",
+                0: "#56B4E9",
+                1: "#0072B2",
+                2: "#009E73",
+                3: "#000000",
+                }
+    return key_dict[index]
 
 
 def plot_compression_comparison(first_databases: list, other_databases: list, first_name: str, other_name: str):
@@ -91,17 +114,17 @@ def plot_compression_comparison(first_databases: list, other_databases: list, fi
     plt.show()
 
 
-def plot_output_files_size(model_databases: List[str]):
+def plot_output_files_size(model_databases: List[str], custom_names: list = None):
     filenames = ["klatka kluczowa", "wektory ruchu w podprzestrzeni", "wektory ruchu w hiperprzestrzeni",
                  "rezydua w podprzestrzeni", "rezydua w hiperprzestrzeni"]
     plot_data = {}
-    for database_path in model_databases:
+    for j, database_path in enumerate(model_databases):
         with open(database_path, "r") as f:
             database = json.load(f)
         motion_bpp = 0
         residual_bpp = 0
         keyframe_bpp = 0
-        name = database['rdr']
+        name = database['rdr'] if custom_names is None else custom_names[j]
         for data_entry in database["data"]:
             for bpp, filename in zip(data_entry["bpp"], filenames):
                 keyframe_bpp = keyframe_bpp + bpp if filename.startswith("klatka") else keyframe_bpp
@@ -142,7 +165,7 @@ def plot_output_files_size(model_databases: List[str]):
     plt.show()
 
 
-def plot_superresolution_table(model_databases: List[str], ffmpeg_database: str):
+def plot_superresolution_table(model_databases: List[str], ffmpeg_database: str, custom_names: list = None):
     with open(ffmpeg_database, "r") as f:
         ffmpeg_data = json.load(f)
 
@@ -156,10 +179,10 @@ def plot_superresolution_table(model_databases: List[str], ffmpeg_database: str)
     plot_data["interpolacja dwuliniowa"] = (np.round(np.array(plot_data["interpolacja dwuliniowa"][0]).mean(), 2),
                                             np.round(np.array(plot_data["interpolacja dwuliniowa"][1]).mean(), 2))
 
-    for database_path in model_databases:
+    for j, database_path in enumerate(model_databases):
         with open(database_path, "r") as f:
             database = json.load(f)
-        name = database['rdr']
+        name = database['rdr'] if custom_names is None else custom_names[j]
         plot_data[name] = ([], [])
         for data_entry in database["data"]:
             for i, metric in enumerate(["vsr_psnr", "vsr_ssim"]):
@@ -173,7 +196,7 @@ def plot_superresolution_table(model_databases: List[str], ffmpeg_database: str)
     print(df.to_string(index=False, header=False))
 
 
-def plot_compression_curve(model_databases: List[str], ffmpeg_database: str):
+def plot_compression_curve(model_databases: List[str], ffmpeg_database: str, custom_names: list = None):
     with open(ffmpeg_database, "r") as f:
         ffmpeg_data = json.load(f)
 
@@ -202,11 +225,11 @@ def plot_compression_curve(model_databases: List[str], ffmpeg_database: str):
 
     rdrs = []
     model_plot_data = {}
-    for database_path in model_databases:
+    for i, database_path in enumerate(model_databases):
         with open(database_path, "r") as f:
             database = json.load(f)
         assert ("rdr" in database.keys())
-        name = database['rdr']
+        name = database['rdr'] if custom_names is None else custom_names[i]
         rdrs.append(database["rdr"])
         mean_psnr = []
         mean_ssim = []
@@ -239,11 +262,12 @@ def plot_compression_curve(model_databases: List[str], ffmpeg_database: str):
     for i, metric in enumerate(["PSNR", "SSIM"]):
         for key, (x_data, y_data) in codec_plot_data.items():
             plt.plot(x_data, y_data[i], linestyle=get_line_type(key), color=get_color(key))
-        for key, (x_data, y_data) in model_plot_data.items():
-            plt.scatter(x_data, y_data[i], color=get_color(key))
+        for j, (key, (x_data, y_data)) in enumerate(model_plot_data.items()):
+            color = get_color_with_index(j) if custom_names is not None else get_color(key)
+            plt.scatter(x_data, y_data[i], color=color)
         plt.xlabel("BPP")
         plt.ylabel(metric)
-        plt.legend(list(codec_plot_data.keys()) + [f"λ={key}" for key in model_plot_data.keys()])
+        plt.legend(list(codec_plot_data.keys()) + [f"λ={key}" for key in model_plot_data.keys()], loc=3)
         plt.show()
 
 
@@ -277,37 +301,25 @@ def test_uvg(model: VSRVCModel, dst_path: str, dataset: UVGDataset, keyframe_for
     return dst_path
 
 
-def plot_frame_compression_performance(model_databases: list, quality_metric: str = "psnr"):
-    # with open(ffmpeg_database, "r") as f:
-    #     ffmpeg_data = json.load(f)
-    #
+def plot_frame_compression_performance(model_databases: list, quality_metric: str = "psnr", custom_names: list = None):
     names = []
-    # codec_plot_data = {}
-    # crf_index = ffmpeg_data["crfs"].index(crf)
-    # for codec in ["avc", "hevc"]:
-    #     names.append(codec)
-    #     qualities = []
-    #     for data_entry in ffmpeg_data["data"]:
-    #         qualities.append(data_entry[codec][crf_index][quality_metric])
-    #     codec_plot_data[codec] = np.array(qualities).mean(axis=0)
-
     # Model data
     model_plot_data = {}
-    for database_path in model_databases:
+    for i, database_path in enumerate(model_databases):
         with open(database_path, "r") as f:
             database = json.load(f)
         qualities = []
-        name = database['rdr']
+        name = database['rdr'] if custom_names is None else custom_names[i]
         for data_entry in database["data"]:
             key = "vc_" + quality_metric
             qualities.append(data_entry[key])
         model_plot_data[name] = np.array(qualities).mean(axis=0)
         names.append(f"λ={name}")
 
-    # for key, y_data in codec_plot_data.items():
-    #     plt.plot(list(range(1, len(y_data) + 1)), y_data, linestyle=get_line_type(key), color=get_color(key), linewidth=2.0)
-    for key, y_data in model_plot_data.items():
-        plt.plot(list(range(1, len(y_data) + 1)), y_data, linestyle=get_line_type(key), color=get_color(key),
+    for i, (key, y_data) in enumerate(model_plot_data.items()):
+        color = get_color_with_index(i) if custom_names is not None else get_color(key)
+        linestyle = get_line_type_with_index(i) if custom_names is not None else get_line_type(key)
+        plt.plot(list(range(1, len(y_data) + 1)), y_data, linestyle=linestyle, color=color,
                  linewidth=2.0)
     plt.xlabel("Klatka")
     plt.ylabel(quality_metric.upper())
@@ -319,35 +331,27 @@ def get_baseline(checkpoints):
     return [f"{str(pathlib.Path(chkpt).parent)}/uvg_eval.json" for chkpt in checkpoints]
 
 
-if __name__ == "__main__":
-    # checkpoints1 = ["../outputs/baseline_no_aug128/model_30.pth", "../outputs/baseline_no_aug512/model_30.pth",
-    #                "../outputs/baseline_no_aug1024/model_30.pth", "../outputs/baseline_no_aug2048/model_30.pth"]
-    # checkpoints2 = ["../outputs/VCVSR 128/model_30.pth", "../outputs/VCVSR 512/model_30.pth",
-    #                "../outputs/VCVSR 1024/model_30.pth", "../outputs/VCVSR 2048/model_30.pth"]
-    checkpoints3 = ["../outputs/VSRVC AUG 128/model_30.pth", "../outputs/VSRVC AUG 512/model_30.pth",
-                    "../outputs/VSRVC AUG 1024/model_30.pth", "../outputs/VSRVC AUG 2048/model_30.pth"]
-    #
-    # checkpoints = ["../outputs/Baseline VC 128/model_30.pth", "../outputs/Baseline VC 512/model_30.pth",
-    #                "../outputs/Baseline VC 1024/model_30.pth", "../outputs/Baseline VC 2048/model_30.pth",
-    #                "../outputs/VSR 128/model_30.pth", "../outputs/VSR 512/model_30.pth",
-    #                "../outputs/VSR 1024/model_30.pth", "../outputs/VSR 2048/model_30.pth"
-    #                ]
-    # plot_frame_results_on_given_video(checkpoints, r"C:\Users\CamaroTheBOSS\Downloads", 25, "YachtRide")
-    # Generate eval databases
-    checkpoints = ["../outputs/VSRVC AUG 2048/model_30.pth"]
+def generate_eval_files(checkpoints: list):
     uvg = UVGDataset("../../Datasets/UVG", 2, max_frames=100)
-    for chkpt in checkpoints3:
+    for chkpt in checkpoints:
         model = load_model(chkpt)
         model.eval()
         save_root = str(pathlib.Path(chkpt).parent)
-        name = save_root.split("\\")[-1]
         test_uvg(model, f"{save_root}/uvg_eval.json", uvg, keyframe_format="jpg", save_root=save_root)
 
-    # Plot eval databases
-    baseline = [f"{str(pathlib.Path(chkpt).parent)}/uvg_eval.json" for chkpt in checkpoints3]
-    plot_compression_curve(baseline, "database2.json")
-    # plot_frame_compression_performance(baseline, quality_metric="psnr")
-    # plot_frame_compression_performance(baseline, quality_metric="ssim")
-    plot_superresolution_table(baseline, "database2.json")
-    # plot_output_files_size(baseline)
+
+if __name__ == "__main__":
+    # checkpoints = ["../outputs/VSRVC AUG 128/model_30.pth", "../outputs/VSRVC AUG 512/model_30.pth",
+    #                 "../outputs/VSRVC AUG 1024/model_30.pth", "../outputs/VSRVC AUG 2048/model_30.pth"]
+    checkpoints = ["../outputs/backup/VSRVC NAUG 2048/model_30.pth", "../outputs/SRRDR VCVSR NAUG 2048/model_30.pth",
+                   "../outputs/backup/VSRVC AUG 2048/model_30.pth", "../outputs/SRRDR VCVSR AUG 2048/model_30.pth"]
+    names = ["2048 (model NZ)", "2048 (model Z)",
+             "2048 (model NZ AUG)", "2048 (model Z AUG)"]
+    chkpt_roots = [f"{str(pathlib.Path(chkpt).parent)}/uvg_eval.json" for chkpt in checkpoints]
+
+    plot_compression_curve(chkpt_roots, "database2.json", custom_names=names)
+    plot_superresolution_table(chkpt_roots, "database2.json", custom_names=names)
+    # plot_frame_compression_performance(chkpt_roots, quality_metric="psnr", custom_names=names)
+    # plot_frame_compression_performance(chkpt_roots, quality_metric="ssim", custom_names=names)
+    # plot_output_files_size(chkpt_roots, custom_names=names)
 

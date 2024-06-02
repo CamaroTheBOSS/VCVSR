@@ -101,7 +101,7 @@ def main(rdr):
     wandb_enabled = False
     augment = True
     quant_type = "standard"
-    run_name = f"QUANT2 {'VSR' if vsr else ''}{'VC' if vc else ''} {'AUG' if augment else 'NAUG'} {rate_distortion}"
+    run_name = f" {'VSR' if vsr else ''}{'VC' if vc else ''} {'AUG' if augment else 'NAUG'} {rate_distortion}"
     run_description = f"VSRVC augmented bez RDR dla SR"
     if wandb_enabled:
         wandb.init(project="VSRVC", name=run_name)
@@ -117,7 +117,7 @@ def main(rdr):
     train_dataloader = DataLoader(train_set, batch_size=batch, shuffle=True, drop_last=True)
     test_dataloader = DataLoader(test_set, batch_size=batch, shuffle=False, drop_last=True)
 
-    model = load_model(checkpoint_path, run_name, rate_distortion, vc, vsr)
+    model = load_model(checkpoint_path, run_name, rate_distortion, vc, vsr, quant_type)
     logger.log(model.summary())
     optimizer = AdamW(model.parameters(), lr=lr)
     lr_scheduler = MyCosineAnnealingLR(optimizer, epochs * len(train_dataloader), 0.01 * lr, starting_point=0.5)

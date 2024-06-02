@@ -218,9 +218,11 @@ class VSRVCModel(nn.Module):
             ResidualBlocksWithInputConv(in_channels=64, out_channels=64, num_blocks=3)
         ])
         self.motion_estimator = MotionEstimator(in_channels=64, out_channels=64)
-        self.motion_compressor = HyperpriorCompressor(in_channels=64, mid_channels=128, out_channels=64, quant_type=quant_type)
+        self.motion_compressor = HyperpriorCompressor(in_channels=64, mid_channels=128, out_channels=64,
+                                                      quant_type=quant_type)
         self.motion_compensator = MotionCompensator(channels=64, dcn_groups=8)
-        self.residual_compressor = HyperpriorCompressor(in_channels=64, mid_channels=128, out_channels=64, quant_type=quant_type)
+        self.residual_compressor = HyperpriorCompressor(in_channels=64, mid_channels=128, out_channels=64,
+                                                        quant_type=quant_type)
 
         self.reconstruction_head = CompressionReconstructionHead(in_channels=64, mid_channels=64)
         self.upscaler_head = UpscalingModule(in_channels=64, mid_channels=64)
@@ -521,8 +523,8 @@ class VSRVCModel(nn.Module):
 
         # [SR branch] Loss function
         loss_vsr = {
-            "vsr_recon": self.reconsatruction_loss(upscaled_frame,
-                                                             current_hqf) if current_hqf is not None else None,
+            "vsr_recon": self.reconstruction_loss(upscaled_frame,
+                                                  current_hqf) if current_hqf is not None else None,
         }
 
         additional_info = {"count_non_zeros_offsets": count_nonzeros_offsets,
