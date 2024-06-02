@@ -63,7 +63,7 @@ class HyperpriorEntropyCoder(nn.Module):
     """
     Estimate bits with hyperprior entropy model
     """
-    def __init__(self, channels: int):
+    def __init__(self, channels: int, quant_type: str = "standard"):
         super(HyperpriorEntropyCoder, self).__init__()
         self.distribution = DirectEntropyCoder(channels)
         self.mu_sigma_adjuster = nn.Sequential(*[
@@ -75,6 +75,7 @@ class HyperpriorEntropyCoder(nn.Module):
             nn.Conv2d(channels * 4, channels * 2, 1, stride=1, padding=0),
         ])
         self.channels = channels
+        self.quant_type = quant_type
 
     def get_mu_sigma(self, mu_sigmas):
         mu_sigmas = self.mu_sigma_adjuster(mu_sigmas)
@@ -109,9 +110,10 @@ class HyperpriorEntropyCoder(nn.Module):
         return values[:, :n_values]
 
     def forward(self, data_prior: torch.Tensor, data_hyperprior: torch.Tensor, mu_sigmas: torch.Tensor,
-                scale_prior, zero_point_prior, scale_hyperprior, zero_point_hyperprior):
-        data_prior = qint_to_int(data_prior, scale_prior)
-        data_hyperprior = qint_to_int(data_hyperprior, scale_hyperprior)
+                scale_prior, scale_hyperprior):
+        if self.quant_type == "qint":
+            data_prior = qint_to_int(data_prior, scale_prior)
+            data_hyperprior = qint_to_int(data_hyperprior, scale_hyperprior)
         hyperprior_bits = self.distribution(data_hyperprior)
         prior_bits, mu, sigmas = self.estimate_prior_bits(data_prior, mu_sigmas)
         return prior_bits, hyperprior_bits, mu, sigmas

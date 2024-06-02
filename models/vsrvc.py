@@ -1,3 +1,4 @@
+import glob
 import os
 import pickle
 import shutil
@@ -30,8 +31,9 @@ class VSRVCOutput:
     additional_info: dict = None
 
 
-def load_model(chkpt_path: str = None, name: str = "VSRVC", rdr: int = 128, vc: bool = True, vsr: bool = True):
-    model = VSRVCModel(name, rdr, vc, vsr)
+def load_model(chkpt_path: str = None, name: str = "VSRVC", rdr: int = 128, vc: bool = True, vsr: bool = True,
+               quant_type: str = "standard"):
+    model = VSRVCModel(name, rdr, vc, vsr, quant_type)
     if chkpt_path is not None:
         saved_model = torch.load(chkpt_path)
         model.load_state_dict(saved_model['model_state_dict'])
@@ -43,6 +45,8 @@ def load_model(chkpt_path: str = None, name: str = "VSRVC", rdr: int = 128, vc: 
             model.vc = saved_model["vc"]
         if "vsr" in saved_model.keys():
             model.vsr = saved_model["vsr"]
+        if "quant_type" in saved_model.keys():
+            model.quant_type = saved_model["quant_type"]
     return model
 
 
@@ -81,7 +85,7 @@ def int_to_float(x: torch.Tensor, scale: float, zero_point: float):
 
 
 class HyperpriorCompressor(nn.Module):
-    def __init__(self, in_channels: int, mid_channels: int, out_channels: int):
+    def __init__(self, in_channels: int, mid_channels: int, out_channels: int, quant_type: str = "standard"):
         super(HyperpriorCompressor, self).__init__()
         self.data_encoder = nn.Sequential(*[
             nn.Conv2d(in_channels, mid_channels, 5, stride=2, padding=2),
@@ -112,10 +116,16 @@ class HyperpriorCompressor(nn.Module):
             nn.LeakyReLU(negative_slope=0.2),
             nn.ConvTranspose2d(mid_channels * 3 // 2, mid_channels * 2, 3, stride=1, padding=1),
         ])
-        self.bit_estimator = HyperpriorEntropyCoder(mid_channels)
+        self.bit_estimator = HyperpriorEntropyCoder(mid_channels, quant_type)
         self.mid_channels = mid_channels
+        self.quant_type = quant_type
 
-    def quantize(self, x: torch.Tensor):
+    def standard_quantization(self, x: torch.Tensor):
+        if self.training:
+            return x + torch.nn.init.uniform_(torch.zeros_like(x), -0.5, 0.5), None, None
+        return torch.round(x), None, None
+
+    def qint_quantization(self, x: torch.Tensor):
         x = torch.clamp(x, -128, 127)
         zero_point = (x.max() + x.min()) / 2
         scale = (x.max() - x.min()) / 128
@@ -125,6 +135,12 @@ class HyperpriorCompressor(nn.Module):
             return x + noise, scale, zero_point
         quantized_x = torch.quantize_per_tensor(x, scale, zero_point, torch.qint8)
         return quantized_x, scale, zero_point
+
+    def quantize(self, x: torch.Tensor):
+        if self.quant_type == "standard":
+            return self.standard_quantization(x)
+        elif self.quant_type == "qint":
+            return self.qint_quantization(x)
 
     def train_compression_decompression(self, data: torch.Tensor):
         data_prior = self.data_encoder(data)
@@ -137,8 +153,7 @@ class HyperpriorCompressor(nn.Module):
 
         mu_sigmas = self.hyperprior_decoder(quantized_data_hyperprior)
         prior_bits, hyperprior_bits, _, _ = self.bit_estimator(quantized_data_prior, quantized_data_hyperprior,
-                                                               mu_sigmas, scale_prior, zero_point_prior,
-                                                               scale_hyperprior, zero_point_hyperprior)
+                                                               mu_sigmas, scale_prior, scale_hyperprior)
 
         # sigmas = mu_sigmas[:, quantized_data_prior.shape[1]:]
         reconstructed_data = self.data_decoder(torch.cat([quantized_data_prior, mu_sigmas], dim=1))
@@ -147,10 +162,10 @@ class HyperpriorCompressor(nn.Module):
 
     def compress(self, data: torch.Tensor):
         data_prior = self.data_encoder(data)
-        quantized_data_prior = self.quantize(data_prior)
+        quantized_data_prior, _, _ = self.quantize(data_prior)
 
         data_hyperprior = self.hyperprior_encoder(data_prior)
-        quantized_data_hyperprior = self.quantize(data_hyperprior)
+        quantized_data_hyperprior, _, _ = self.quantize(data_hyperprior)
 
         return quantized_data_prior, quantized_data_hyperprior
 
@@ -196,16 +211,16 @@ class CompressionReconstructionHead(nn.Module):
 
 
 class VSRVCModel(nn.Module):
-    def __init__(self, name="", rdr: float = 128, vc: bool = True, vsr: bool = True):
+    def __init__(self, name="", rdr: float = 128, vc: bool = True, vsr: bool = True, quant_type: str = "standard"):
         super(VSRVCModel, self).__init__()
         self.feature_extraction = nn.Sequential(*[
             nn.Conv2d(3, 64, 5, 2, 2),
             ResidualBlocksWithInputConv(in_channels=64, out_channels=64, num_blocks=3)
         ])
         self.motion_estimator = MotionEstimator(in_channels=64, out_channels=64)
-        self.motion_compressor = HyperpriorCompressor(in_channels=64, mid_channels=128, out_channels=64)
+        self.motion_compressor = HyperpriorCompressor(in_channels=64, mid_channels=128, out_channels=64, quant_type=quant_type)
         self.motion_compensator = MotionCompensator(channels=64, dcn_groups=8)
-        self.residual_compressor = HyperpriorCompressor(in_channels=64, mid_channels=128, out_channels=64)
+        self.residual_compressor = HyperpriorCompressor(in_channels=64, mid_channels=128, out_channels=64, quant_type=quant_type)
 
         self.reconstruction_head = CompressionReconstructionHead(in_channels=64, mid_channels=64)
         self.upscaler_head = UpscalingModule(in_channels=64, mid_channels=64)
@@ -218,6 +233,17 @@ class VSRVCModel(nn.Module):
         self.name = name
         self.vc = vc
         self.vsr = vsr
+        self.quant_type = quant_type
+
+    def save_chkpt(self, root: str, epoch: int, only_last: bool = True):
+        kwargs = {"model_name": self.name, "rate_distortion_ratio": self.rdr, "vc": self.vc, "vsr": self.vsr,
+                  "quant_type": self.quant_type}
+        if only_last:
+            pth_files = glob.glob(os.path.join(root, "model_*.pth"))
+            for file in pth_files:
+                os.remove(file)
+        path = os.path.join(root, f"model_{epoch + 1}.pth")
+        torch.save({'model_state_dict': self.state_dict(), **kwargs}, path)
 
     def to(self, device):
         super().to(device)
@@ -249,8 +275,10 @@ class VSRVCModel(nn.Module):
             save_root = "./"
         b, n, c, h, w = video.shape
         video = video.to(self.device)
-        to_code = {"offsets_prior": [], "offsets_hyperprior": [], "residuals_prior": [], "residuals_hyperprior": [],
-                   "quantization_info": []}
+        to_code = {"offsets_prior": [], "offsets_hyperprior": [], "residuals_prior": [], "residuals_hyperprior": []}
+        if self.quant_type == "qint":
+            to_code["quantization_info"] = []
+
         start_time = time.time()
         if verbose:
             print(f"Starting inference...")
@@ -271,17 +299,22 @@ class VSRVCModel(nn.Module):
             residuals = current_features - aligned_features
             residual_prior, residual_hyperprior = self.residual_compressor.compress(residuals)
             hqs.append(self.upscaler_head(aligned_features, current_lqf))
+            if self.quant_type == "qint":
+                to_code["quantization_info"].append(
+                    torch.tensor([[offsets_prior.q_scale(), offsets_prior.q_zero_point()],
+                                  [offsets_hyperprior.q_scale(), offsets_hyperprior.q_zero_point()],
+                                  [residual_prior.q_scale(), residual_prior.q_zero_point()],
+                                  [residual_hyperprior.q_scale(), residual_hyperprior.q_zero_point()]])
+                )
+                offsets_prior = offsets_prior.int_repr()
+                offsets_hyperprior = offsets_hyperprior.int_repr()
+                residual_prior = residual_prior.int_repr()
+                residual_hyperprior = residual_hyperprior.int_repr()
 
-            to_code["offsets_prior"].append(offsets_prior.int_repr())
-            to_code["offsets_hyperprior"].append(offsets_hyperprior.int_repr())
-            to_code["residuals_prior"].append(residual_prior.int_repr())
-            to_code["residuals_hyperprior"].append(residual_hyperprior.int_repr())
-            to_code["quantization_info"].append(
-                torch.tensor([[offsets_prior.q_scale(), offsets_prior.q_zero_point()],
-                              [offsets_hyperprior.q_scale(), offsets_hyperprior.q_zero_point()],
-                              [residual_prior.q_scale(), residual_prior.q_zero_point()],
-                              [residual_hyperprior.q_scale(), residual_hyperprior.q_zero_point()]])
-            )
+            to_code["offsets_prior"].append(offsets_prior)
+            to_code["offsets_hyperprior"].append(offsets_hyperprior)
+            to_code["residuals_prior"].append(residual_prior)
+            to_code["residuals_hyperprior"].append(residual_hyperprior)
             previous_features = current_features
         if verbose:
             print(f"Model inference done")
@@ -297,12 +330,12 @@ class VSRVCModel(nn.Module):
         items = to_code.items()
         for i, (key, value) in enumerate(items):
             filepath = os.path.join(output_dir, f"{key}.pkl")
+            data = torch.stack(value).squeeze(1)
+            if key != "quantization_info":
+                data = data.int()
+                if torch.max(data) <= 127 and torch.min(data) >= -128:
+                    data = data.to(torch.int8)
             with gzip.open(filepath, "wb") as f:
-                data = torch.stack(value).squeeze(1)
-                if key != "quantization_info":
-                    data = data.int()
-                    if torch.max(torch.abs(data)) < 128:
-                        data = data.to(torch.int8)
                 pickle.dump(data, f)
             if verbose:
                 print(f"{round((i + 1) / len(items) * 100, 2)}%")
@@ -321,12 +354,13 @@ class VSRVCModel(nn.Module):
         return output_dir, size_bpp, torch.stack(hqs).squeeze(1).unsqueeze(0)
 
     def decompress(self, compressed_root: str):
-        pkl_filenames = ["offsets_prior", "offsets_hyperprior", "residuals_prior", "residuals_hyperprior",
-                         "quantization_info"]
+        pkl_filenames = ["offsets_prior", "offsets_hyperprior", "residuals_prior", "residuals_hyperprior"]
+        if self.quant_type == "qint":
+            pkl_filenames.append("quantization_info")
         listed_files = os.listdir(compressed_root)
         pkl_files = list(filter(lambda file: any(pkl in file for pkl in pkl_filenames), listed_files))
         keyframe = list(filter(lambda x: x.startswith("keyframe"), listed_files))
-        if len(pkl_files) != 5:
+        if len(pkl_files) != (5 if self.quant_type == "qint" else 4):
             raise Exception("Error! Lack of necessary pkl files needed for decompression.")
         if len(keyframe) != 1:
             raise Exception("Error! Lack of necessary keyframe image file needed for decompression")
@@ -338,13 +372,17 @@ class VSRVCModel(nn.Module):
                                      convert("RGB")).to(self.device).unsqueeze(0)]
         previous_features = self.feature_extraction(decoded_frames[0])
 
+        if self.quant_type == "standard":
+            decoded_data["quantization_info"] = decoded_data["offsets_prior"]  # for compatibility purposes
         for op, ohp, rp, rhp, q_info in zip(decoded_data["offsets_prior"], decoded_data["offsets_hyperprior"],
                                             decoded_data["residuals_prior"], decoded_data["residuals_hyperprior"],
                                             decoded_data["quantization_info"]):
-            op = int_to_float(op, *q_info[0]).unsqueeze(0)
-            ohp = int_to_float(ohp, *q_info[1]).unsqueeze(0)
-            rp = int_to_float(rp, *q_info[2]).unsqueeze(0)
-            rhp = int_to_float(rhp, *q_info[3]).unsqueeze(0)
+            if self.quant_type == "qint":
+                op = int_to_float(op, *q_info[0])
+                ohp = int_to_float(ohp, *q_info[1])
+                rp = int_to_float(rp, *q_info[2])
+                rhp = int_to_float(rhp, *q_info[3])
+            op, ohp, rp, rhp = op.unsqueeze(0), ohp.unsqueeze(0), rp.unsqueeze(0), rhp.unsqueeze(0)
             reconstructed_offsets = self.motion_compressor.decompress(op, ohp)
             aligned_features = self.motion_compensator(previous_features, reconstructed_offsets)
 

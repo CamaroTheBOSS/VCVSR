@@ -100,6 +100,7 @@ def main(rdr):
     checkpoint_path = None
     wandb_enabled = False
     augment = True
+    quant_type = "standard"
     run_name = f"QUANT2 {'VSR' if vsr else ''}{'VC' if vc else ''} {'AUG' if augment else 'NAUG'} {rate_distortion}"
     run_description = f"VSRVC augmented bez RDR dla SR"
     if wandb_enabled:
@@ -130,8 +131,7 @@ def main(rdr):
                 log_to_wandb(loss_dict, metric_dict)
 
             if (epoch + 1) % checkpoint == 0:
-                kwargs = {"model_name": run_name, "rate_distortion_ratio": model.rdr, "vc": model.vc, "vsr": model.vsr}
-                save_checkpoint(model, output_dir, epoch, only_last=True, **kwargs)
+                model.save_chkpt(output_dir, epoch, only_last=True)
         uvg = UVGDataset("../Datasets/UVG", 2, max_frames=100)
         test_uvg(model, f"{output_dir}/uvg_eval.json", uvg, save_root=output_dir)
 

@@ -179,12 +179,11 @@ def eval_estimated_bits(model: nn.Module, dataset, examples: list = None, save_r
 
 if __name__ == "__main__":
     # chkpt = "../outputs/baseline_no_aug2048/model_30.pth"
-    chkpt = "../outputs/VSRVC AUG 2048/model_30.pth"
+    chkpt = "../outputs/SRRDR VCVSR AUG 2048/model_30.pth"
     model = load_model(chkpt)
     model.eval()
     save_root = str(pathlib.Path(chkpt).parent)
 
-    # dataset = Vimeo90k("../../Datasets/VIMEO90k", 2, test_mode=True)
     dataset = UVGDataset("../../Datasets/UVG", 2, max_frames=100)
 
     # draw_model_distributions_deriv(model)
