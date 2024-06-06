@@ -14,7 +14,7 @@ from datasets import Vimeo90k, UVGDataset
 from evaluation.full_evaluation import test_uvg
 from models.vsrvc import load_model
 from utils import init_run_dir, MetricLogger, add_dict, FileLogger, log_to_wandb, save_video, save_checkpoint, \
-    MyCosineAnnealingLR
+    MyCosineAnnealingLR, AddGaussianNoise
 from metrics import psnr, ssim
 
 
@@ -53,18 +53,26 @@ def evaluate_model(dataloader: DataLoader, model: nn.Module, output_dir: str):
     return metric_dict
 
 
-def train_epoch(dataloader: DataLoader, model: nn.Module, optimizer: Optimizer, lr_scheduler: LRScheduler, epoch: int):
+def train_epoch(dataloader: DataLoader, model: nn.Module, optimizer: Optimizer, lr_scheduler: LRScheduler, epoch: int,
+                noise: bool):
     model.train()
     metric_logger = MetricLogger("   ")
     loss_wandb = {"epoch": 0}
+    gaussian_noise = AddGaussianNoise(0, 0.05)
     for idx, batch in enumerate(metric_logger(dataloader, header=f"Epoch [{epoch}]", print_every=10)):
         if dataloader.dataset.augment:
             video = batch.to(model.device)
+            if noise:
+                video[:, 0] = gaussian_noise(video[:, 0])
             hqs = torch.stack([dataloader.dataset.augmentation(vid) for vid in video])
             lqs = torch.stack([dataloader.dataset.resize(vid) for vid in hqs])
         else:
-            lqs = batch[0].to(model.device)
             hqs = batch[1].to(model.device)
+            if noise:
+                hqs[:, 0] = gaussian_noise(hqs[:, 0])
+                lqs = torch.stack([dataloader.dataset.resize(vid) for vid in hqs])
+            else:
+                lqs = batch[0].to(model.device)
         outputs = model(lqs[:, 0], lqs[:, 1], hqs[:, 1])
         loss_vc = sum(loss_value for loss_value in outputs.loss_vc.values())
         loss_vsr = sum(loss_value for loss_value in outputs.loss_vsr.values())
@@ -98,10 +106,12 @@ def main(rdr):
     vsr = True
     vc = True
     checkpoint_path = None
-    wandb_enabled = False
-    augment = True
-    quant_type = "standard"
-    run_name = f" {'VSR' if vsr else ''}{'VC' if vc else ''} {'AUG' if augment else 'NAUG'} {rate_distortion}"
+    wandb_enabled = True
+    augment = False
+    noise_in_data = False
+    quant_type = "normalized"
+    run_name = (f"{'NOISED' if noise_in_data else ''} {quant_type[0].upper()}QUANT {'VSR' if vsr else ''}"
+                f"{'VC' if vc else ''} {'AUG' if augment else 'NAUG'} {rate_distortion}")
     run_description = f"VSRVC augmented bez RDR dla SR"
     if wandb_enabled:
         wandb.init(project="VSRVC", name=run_name)
@@ -124,7 +134,7 @@ def main(rdr):
 
     try:
         for epoch in range(epochs):
-            loss_dict = train_epoch(train_dataloader, model, optimizer, lr_scheduler, epoch)
+            loss_dict = train_epoch(train_dataloader, model, optimizer, lr_scheduler, epoch, noise_in_data)
             metric_dict = evaluate_model(test_dataloader, model, f"{output_dir}/epoch_{epoch + 1}")
             print(metric_dict)
             if wandb_enabled:

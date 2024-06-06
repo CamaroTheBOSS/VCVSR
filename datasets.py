@@ -11,9 +11,12 @@ from torchvision.transforms import Compose, ToTensor
 from kornia.augmentation import ColorJiggle, RandomCrop, RandomVerticalFlip, RandomHorizontalFlip, RandomRotation, \
     Resize
 
+from utils import AddGaussianNoise
+
 
 class Vimeo90k(Dataset):
-    def __init__(self, root: str, scale: int, test_mode: bool = False, crop_size: Tuple[int, int] = (256, 384), augment: bool = False):
+    def __init__(self, root: str, scale: int, test_mode: bool = False, crop_size: Tuple[int, int] = (256, 384),
+                 augment: bool = False):
         super().__init__()
         self.root = root
         self.sequences = os.path.join(root, "train")
@@ -26,18 +29,18 @@ class Vimeo90k(Dataset):
         self.transform = Compose([ToTensor()])
         self.augment = augment
         if augment:
-            self.augmentation = Compose([
+            augmentations = [
                 ColorJiggle(brightness=(0.85, 1.15), contrast=(0.75, 1.15), saturation=(0.75, 1.25), hue=(-0.02, 0.02),
                             same_on_batch=True, p=1),
                 RandomCrop(size=crop_size, same_on_batch=True),
                 RandomVerticalFlip(same_on_batch=True, p=0.5),
                 RandomHorizontalFlip(same_on_batch=True, p=0.5),
-                RandomRotation(degrees=180, same_on_batch=True),
-            ])
+            ]
         else:
-            self.augmentation = Compose([
+            augmentations = [
                 RandomCrop(size=crop_size, same_on_batch=True),
-            ])
+            ]
+        self.augmentation = Compose(augmentations)
         self.resize = Resize((int(crop_size[0] / self.scale), int(crop_size[1] / self.scale)))
 
         assert os.path.exists(self.root)

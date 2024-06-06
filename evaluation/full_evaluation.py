@@ -340,18 +340,36 @@ def generate_eval_files(checkpoints: list):
         test_uvg(model, f"{save_root}/uvg_eval.json", uvg, keyframe_format="jpg", save_root=save_root)
 
 
+def change_model_metadata(checkpoint: str, new_name: str = None, new_quant_type: str = None):
+    model = load_model(checkpoint)
+    save = False
+    if new_name is not None:
+        save = True
+        model.name = new_name
+    if new_quant_type is not None:
+        save = True
+        model.quant_type = new_quant_type
+    if save:
+        model.save_chkpt(str(pathlib.Path(checkpoint).parent), 29)
+        print("Model metadata changed")
+
+
+
 if __name__ == "__main__":
     # checkpoints = ["../outputs/VSRVC AUG 128/model_30.pth", "../outputs/VSRVC AUG 512/model_30.pth",
     #                 "../outputs/VSRVC AUG 1024/model_30.pth", "../outputs/VSRVC AUG 2048/model_30.pth"]
-    checkpoints = ["../outputs/backup/VSRVC NAUG 2048/model_30.pth", "../outputs/SRRDR VCVSR NAUG 2048/model_30.pth",
-                   "../outputs/backup/VSRVC AUG 2048/model_30.pth", "../outputs/SRRDR VCVSR AUG 2048/model_30.pth"]
-    names = ["2048 (model NZ)", "2048 (model Z)",
-             "2048 (model NZ AUG)", "2048 (model Z AUG)"]
+    # checkpoints = ["../outputs/backup/VSRVC AUG 2048/model_30.pth", "../outputs/SRRDR VCVSR AUG 2048/model_30.pth",
+    #                "../outputs/NQUANT VSRVC AUG 2048/model_30.pth", "../outputs/SRRDR NQUANT VSRVC AUG 2048/model_30.pth"]
+    checkpoints = ["../outputs/backup/VSRVC NAUG 2048/model_30.pth", "../outputs/NOISED SQUANT VSRVC NAUG 2048/model_30.pth"]
+
+    # names = ["2048 (model NZ)", "2048 (model Z)",
+    #          "2048 (model NZ NQ)", "2048 (model Z NQ)"]
+    names = ["2048 model NAUG", "2048 model NAUG NOISED"]
     chkpt_roots = [f"{str(pathlib.Path(chkpt).parent)}/uvg_eval.json" for chkpt in checkpoints]
 
     plot_compression_curve(chkpt_roots, "database2.json", custom_names=names)
     plot_superresolution_table(chkpt_roots, "database2.json", custom_names=names)
-    # plot_frame_compression_performance(chkpt_roots, quality_metric="psnr", custom_names=names)
-    # plot_frame_compression_performance(chkpt_roots, quality_metric="ssim", custom_names=names)
-    # plot_output_files_size(chkpt_roots, custom_names=names)
+    plot_frame_compression_performance(chkpt_roots, quality_metric="psnr", custom_names=names)
+    plot_frame_compression_performance(chkpt_roots, quality_metric="ssim", custom_names=names)
+    plot_output_files_size(chkpt_roots, custom_names=names)
 
