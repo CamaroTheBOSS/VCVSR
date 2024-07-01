@@ -521,7 +521,6 @@ class VSRVCModel(nn.Module):
 
         return torch.stack(decoded_frames).squeeze(1).unsqueeze(0)
 
-
     def forward(self, previous_lqf: torch.Tensor, current_lqf: torch.Tensor, current_hqf: torch.Tensor = None):
         # [SHARED] Get into feature space
         previous_features = self.feature_extraction(previous_lqf)
@@ -565,13 +564,16 @@ class VSRVCModel(nn.Module):
             }
 
         # [SR branch] Super-resolution upscale
-        upscaled_frame = self.upscaler_head(aligned_features, current_lqf)
+        loss_vsr = {}
+        upscaled_frame = torch.zeros_like(current_lqf)
+        if self.vsr:
+            upscaled_frame = self.upscaler_head(aligned_features, current_lqf)
 
-        # [SR branch] Loss function
-        loss_vsr = {
-            "vsr_recon": self.reconstruction_loss(upscaled_frame,
-                                                  current_hqf) if current_hqf is not None else None,
-        }
+            # [SR branch] Loss function
+            loss_vsr = {
+                "vsr_recon": self.reconstruction_loss(upscaled_frame,
+                                                      current_hqf) if current_hqf is not None else None,
+            }
 
         additional_info = {"count_non_zeros_offsets": count_nonzeros_offsets,
                            "count_non_zeros_residuals": count_nonzeros_residuals}

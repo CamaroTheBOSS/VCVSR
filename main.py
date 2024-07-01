@@ -12,8 +12,8 @@ from tqdm.auto import tqdm
 from datasets import Vimeo90k, UVGDataset
 from evaluation.full_evaluation import test_uvg
 from models.vsrvc import load_model
-from utils import init_run_dir, MetricLogger, add_dict, FileLogger, log_to_wandb, save_video, save_checkpoint, \
-    MyCosineAnnealingLR, AddGaussianNoise
+from utils import (init_run_dir, MetricLogger, FileLogger, log_to_wandb, save_video, MyCosineAnnealingLR,
+                   add_dictionaries)
 from metrics import psnr, ssim
 
 
@@ -24,8 +24,8 @@ def evaluate_model(dataloader: DataLoader, model: nn.Module, output_dir: str):
                    "vc_nonzeros_residuals": 0}
     with torch.no_grad():
         for idx, batch in enumerate(tqdm(dataloader)):
-            lqs = batch[0].to(model.device)
-            hqs = batch[1].to(model.device)
+            hqs = batch.to(model.device)
+            lqs = torch.stack([dataloader.dataset.resize(vid) for vid in hqs])
 
             reconstructed, upscaled, bpps, nonzeros_offsets, nonzeros_residuals = [], [], [], [], []
             previous_frames = lqs[:, 0]
@@ -52,33 +52,22 @@ def evaluate_model(dataloader: DataLoader, model: nn.Module, output_dir: str):
     return metric_dict
 
 
-def train_epoch(dataloader: DataLoader, model: nn.Module, optimizer: Optimizer, lr_scheduler: LRScheduler, epoch: int,
-                noise: bool):
+def train_epoch(dataloader: DataLoader, model: nn.Module, optimizer: Optimizer, lr_scheduler: LRScheduler, epoch: int):
     model.train()
     metric_logger = MetricLogger("   ")
     loss_wandb = {"epoch": 0}
-    gaussian_noise = AddGaussianNoise(0, 0.05)
     for idx, batch in enumerate(metric_logger(dataloader, header=f"Epoch [{epoch}]", print_every=10)):
-        if dataloader.dataset.augment:
-            video = batch.to(model.device)
-            if noise:
-                video[:, 0] = gaussian_noise(video[:, 0])
-            hqs = torch.stack([dataloader.dataset.augmentation(vid) for vid in video])
-            lqs = torch.stack([dataloader.dataset.resize(vid) for vid in hqs])
-        else:
-            hqs = batch[1].to(model.device)
-            if noise:
-                hqs[:, 0] = gaussian_noise(hqs[:, 0])
-                lqs = torch.stack([dataloader.dataset.resize(vid) for vid in hqs])
-            else:
-                lqs = batch[0].to(model.device)
+        video = batch.to(model.device)
+        hqs = torch.stack([dataloader.dataset.augmentation(vid) for vid in video])
+        lqs = torch.stack([dataloader.dataset.resize(vid) for vid in hqs])
         outputs = model(lqs[:, 0], lqs[:, 1], hqs[:, 1])
+
         loss_vc = sum(loss_value for loss_value in outputs.loss_vc.values())
         loss_vsr = sum(loss_value for loss_value in outputs.loss_vsr.values())
         loss_shared = sum(loss_value for loss_value in outputs.loss_shared.values())
         loss = loss_shared + (loss_vc if model.vc else 0) + (loss_vsr if model.vsr else 0)
 
-        loss_wandb = add_dict(add_dict(add_dict(loss_wandb, outputs.loss_vc), outputs.loss_vsr), outputs.loss_shared)
+        loss_wandb = add_dictionaries([loss_wandb, outputs.loss_vc, outputs.loss_vsr, outputs.loss_shared])  # add_dict(add_dict(add_dict(loss_wandb, outputs.loss_vc), outputs.loss_vsr), outputs.loss_shared)
         loss_wandb["epoch"] += loss.item()
 
         metric_logger.update({"vc": loss_vc, "vsr": loss_vsr, "shared": loss_shared}, prefix="loss_")
@@ -106,11 +95,7 @@ def main(rdr):
     vc = True
     checkpoint_path = None
     wandb_enabled = True
-    augment = False
-    noise_in_data = False
-    quant_type = "normalized"
-    run_name = (f"{'NOISED' if noise_in_data else ''} {quant_type[0].upper()}QUANT {'VSR' if vsr else ''}"
-                f"{'VC' if vc else ''} {'AUG' if augment else 'NAUG'} {rate_distortion}")
+    run_name = f"{'VSR' if vsr else ''}{'VC' if vc else ''} {rate_distortion}"
     run_description = f"VSRVC augmented bez RDR dla SR"
     if wandb_enabled:
         wandb.init(project="VSRVC", name=run_name)
@@ -121,19 +106,19 @@ def main(rdr):
                f"checkpoint_path: {checkpoint_path}, wandb: {wandb_enabled}, run_name: {run_name}"
                f"rate_distortion_ratio: {rate_distortion}\n\nRUN DESCRIPTION: \n{run_description}\n")
 
-    train_set = Vimeo90k("../Datasets/VIMEO90k", scale, augment=augment)
-    test_set = Vimeo90k("../Datasets/VIMEO90k", scale, test_mode=True, augment=augment)
+    train_set = Vimeo90k("../Datasets/VIMEO90k", scale)
+    test_set = Vimeo90k("../Datasets/VIMEO90k", scale, test_mode=True)
     train_dataloader = DataLoader(train_set, batch_size=batch, shuffle=True, drop_last=True)
     test_dataloader = DataLoader(test_set, batch_size=batch, shuffle=False, drop_last=True)
 
-    model = load_model(checkpoint_path, run_name, rate_distortion, vc, vsr, quant_type)
+    model = load_model(checkpoint_path, run_name, rate_distortion, vc, vsr)
     logger.log(model.summary())
     optimizer = AdamW(model.parameters(), lr=lr)
     lr_scheduler = MyCosineAnnealingLR(optimizer, epochs * len(train_dataloader), 0.01 * lr, starting_point=0.5)
 
     try:
         for epoch in range(epochs):
-            loss_dict = train_epoch(train_dataloader, model, optimizer, lr_scheduler, epoch, noise_in_data)
+            loss_dict = train_epoch(train_dataloader, model, optimizer, lr_scheduler, epoch)
             metric_dict = evaluate_model(test_dataloader, model, f"{output_dir}/epoch_{epoch + 1}")
             print(metric_dict)
             if wandb_enabled:

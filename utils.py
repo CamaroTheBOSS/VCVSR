@@ -65,14 +65,17 @@ def show_features(features: torch.Tensor, size: tuple = None, mode="bilinear"):
     cv2.waitKey(0)
 
 
+def add_dictionaries(dictionaries: list):
+    if len(dictionaries) == 1:
+        return dictionaries[0]
 
-def add_dict(first: dict, second: Dict[str, torch.Tensor]):
-    for key, value in second.items():
-        if key in first.keys():
-            first[key] += value.item()
-        else:
-            first[key] = value.item()
-    return first
+    for dictionary in dictionaries[1:]:
+        for key, value in dictionary.items():
+            if key in dictionaries[0].keys():
+                dictionaries[0][key] += value.item()
+            else:
+                dictionaries[0][key] = value.item()
+    return dictionaries[0]
 
 
 def dict_to_string(dictionary: dict, delimiter=", "):
@@ -302,15 +305,3 @@ class MyCosineAnnealingLR(LRScheduler):
         return [self.eta_min + (base_lr - self.eta_min) *
                 (1 + math.cos(math.pi * self.last_epoch / self.T_max)) / 2
                 for base_lr in self.base_lrs]
-
-
-class AddGaussianNoise(object):
-    def __init__(self, mean=0., std=1.):
-        self.std = std
-        self.mean = mean
-
-    def __call__(self, tensor):
-        return tensor + (torch.randn(tensor.size()) * self.std + self.mean).to(tensor.device)
-
-    def __repr__(self):
-        return self.__class__.__name__ + '(mean={0}, std={1})'.format(self.mean, self.std)

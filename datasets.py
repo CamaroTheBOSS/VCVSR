@@ -1,9 +1,7 @@
 import os
-import time
 from glob import glob
 from typing import Tuple
 
-import numpy as np
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
@@ -11,12 +9,9 @@ from torchvision.transforms import Compose, ToTensor
 from kornia.augmentation import ColorJiggle, RandomCrop, RandomVerticalFlip, RandomHorizontalFlip, RandomRotation, \
     Resize
 
-from utils import AddGaussianNoise
-
 
 class Vimeo90k(Dataset):
-    def __init__(self, root: str, scale: int, test_mode: bool = False, crop_size: Tuple[int, int] = (256, 384),
-                 augment: bool = False):
+    def __init__(self, root: str, scale: int, test_mode: bool = False, crop_size: Tuple[int, int] = (256, 384)):
         super().__init__()
         self.root = root
         self.sequences = os.path.join(root, "train")
@@ -27,20 +22,13 @@ class Vimeo90k(Dataset):
         self.test_mode = test_mode
         self.videos = self.load_paths()
         self.transform = Compose([ToTensor()])
-        self.augment = augment
-        if augment:
-            augmentations = [
-                ColorJiggle(brightness=(0.85, 1.15), contrast=(0.75, 1.15), saturation=(0.75, 1.25), hue=(-0.02, 0.02),
-                            same_on_batch=True, p=1),
-                RandomCrop(size=crop_size, same_on_batch=True),
-                RandomVerticalFlip(same_on_batch=True, p=0.5),
-                RandomHorizontalFlip(same_on_batch=True, p=0.5),
-            ]
-        else:
-            augmentations = [
-                RandomCrop(size=crop_size, same_on_batch=True),
-            ]
-        self.augmentation = Compose(augmentations)
+        self.augmentation = Compose([
+            ColorJiggle(brightness=(0.85, 1.15), contrast=(0.75, 1.15), saturation=(0.75, 1.25), hue=(-0.02, 0.02),
+                        same_on_batch=True, p=1),
+            RandomCrop(size=crop_size, same_on_batch=True),
+            RandomVerticalFlip(same_on_batch=True, p=0.5),
+            RandomHorizontalFlip(same_on_batch=True, p=0.5),
+        ])
         self.resize = Resize((int(crop_size[0] / self.scale), int(crop_size[1] / self.scale)))
 
         assert os.path.exists(self.root)
@@ -65,12 +53,9 @@ class Vimeo90k(Dataset):
 
     def __getitem__(self, index: int):
         video = self.read_video(index)
-        if not self.augment or self.test_mode:
-            hqs = self.augmentation(video) if not self.test_mode else video[:, :, :self.crop_size[0], :self.crop_size[1]]
-            lqs = self.resize(hqs)
-            return lqs, hqs
+        if self.test_mode:
+            return video[:, :, :self.crop_size[0], :self.crop_size[1]]
         return video
-
 
     def __len__(self) -> int:
         return len(self.videos)
@@ -113,10 +98,10 @@ class UVGDataset(Dataset):
         return lqs, hqs
 
     def getitem_with_name(self, name: str):
-        for i, vid in enumerate(self.videos):
-            if name in vid[0].split("\\")[-2]:
-                return self.__getitem__(i)
-        return None, None
+        index = self.get_index_with_name(name)
+        if index is None:
+            return None, None
+        return self.__getitem__(index)
 
     def get_index_with_name(self, name: str):
         for i, vid in enumerate(self.videos):
