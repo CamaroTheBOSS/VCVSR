@@ -19,54 +19,44 @@ Just full test.
 """
 
 
+def get_line_dict():
+    return {"hevc": "-",
+            "avc": "-",
+            128: "-",
+            512: "--",
+            1024: "-",
+            2048: "--",
+            }
+
+
+def get_color_dict():
+    # Okabe Ito color pallete
+    return {"hevc": "#D55E00",
+            "avc": "#E69F00",
+            128: "#56B4E9",
+            512: "#0072B2",
+            1024: "#009E73",
+            2048: "#000000",
+            }
+
+
 def get_line_type(key):
-    key_dict = {"hevc": "-",
-                "avc": "-",
-                128: "-",
-                512: "--",
-                1024: "-",
-                2048: "--",
-                }
-    return key_dict[key]
+    return get_line_dict()[key]
 
 
 def get_line_type_with_index(index):
-    key_dict = {"hevc": "-",
-                "avc": "-",
-                0: "-",
-                1: "--",
-                2: "-",
-                3: "--",
-                }
-    return key_dict[index]
+    return list(get_line_dict().values())[index]
 
 
 def get_color(key):
-    # Okabe Ito color pallete
-    key_dict = {"hevc": "#D55E00",
-                "avc": "#E69F00",
-                128: "#56B4E9",
-                512: "#0072B2",
-                1024: "#009E73",
-                2048: "#000000",
-                }
-    return key_dict[key]
+    return get_color_dict()[key]
 
 
 def get_color_with_index(index):
-    # Okabe Ito color pallete
-    key_dict = {"hevc": "#D55E00",
-                "avc": "#E69F00",
-                3: "#D55E00",
-                0: "#56B4E9",
-                1: "#0072B2",
-                2: "#009E73",
-                5: "#000000",
-                }
-    return key_dict[index]
+    return list(get_color_dict().values())[index]
 
 
-def get_name(model_database):
+def get_rdr(model_database):
     with open(model_database, "r") as f:
         database = json.load(f)
     return database["rdr"]
@@ -106,7 +96,7 @@ def plot_compression_comparison(first_databases: list, other_databases: list, fi
     first_data, other_data = {}, {}
     for data_dict, databases in zip([first_data, other_data], [first_databases, other_databases]):
         for database_path in databases:
-            name = get_name(database_path)
+            name = get_rdr(database_path)
             data = get_compression_curve(database_path, nframes=nframes)
             data_dict[name] = data
 
@@ -140,7 +130,7 @@ def plot_frame_compression_performance_comparison(first_databases: list, other_d
     first_data, other_data = {}, {}
     for data_dict, databases in zip([first_data, other_data], [first_databases, other_databases]):
         for database_path in databases:
-            name = get_name(database_path)
+            name = get_rdr(database_path)
             data = get_frame_compression_performance(database_path, nframes=nframes)
             data_dict[name] = data
 
@@ -267,7 +257,7 @@ def plot_compression_curve(model_databases: List[str], ffmpeg_database: str, cus
 
     model_plot_data = {}
     for i, database_path in enumerate(model_databases):
-        name = get_name(database_path) if custom_names is None else f"{get_name(database_path)} {custom_names[i]}"
+        name = get_rdr(database_path) if custom_names is None else f"{get_rdr(database_path)} {custom_names[i]}"
         data = get_compression_curve(database_path, nframes)
         model_plot_data[name] = data
 
@@ -330,7 +320,7 @@ def plot_frame_compression_performance(model_databases: list, custom_names: list
     names = []
     model_plot_data = {}
     for i, database_path in enumerate(model_databases):
-        name = get_name(database_path) if custom_names is None else f"{get_name(database_path)} {custom_names[i]}"
+        name = get_rdr(database_path) if custom_names is None else f"{get_rdr(database_path)} {custom_names[i]}"
         data = get_frame_compression_performance(database_path)
         model_plot_data[name] = data
         names.append(f"λ={name}")
@@ -374,27 +364,22 @@ def change_model_metadata(checkpoint: str, new_name: str = None, new_quant_type:
         print("Model metadata changed")
 
 
+def plot_charts(model_databases, custom_names = None):
+    baseline = get_baseline(model_databases)
+    plot_compression_curve(baseline, "database2.json", nframes=12, custom_names=custom_names)
+    plot_compression_curve(baseline, "database2.json", custom_names=custom_names)
+    plot_superresolution_table(baseline, "database2.json", custom_names=custom_names)
+    plot_frame_compression_performance(baseline, custom_names=custom_names)
+    plot_output_files_size(baseline, custom_names=custom_names)
+
+
 if __name__ == "__main__":
-    reference = ["../outputs/backup/VSRVC NAUG 128/model_30.pth", "../outputs/backup/VSRVC NAUG 512/model_30.pth",
-                 "../outputs/backup/VSRVC NAUG 1024/model_30.pth", "../outputs/backup/VSRVC NAUG 2048/model_30.pth"]
-    augmented = ["../outputs/backup/VSRVC AUG 128/model_30.pth", "../outputs/backup/VSRVC AUG 512/model_30.pth",
+    reference = ["../outputs/backup/VSRVC AUG 128/model_30.pth", "../outputs/backup/VSRVC AUG 512/model_30.pth",
                  "../outputs/backup/VSRVC AUG 1024/model_30.pth", "../outputs/backup/VSRVC AUG 2048/model_30.pth"]
-    nquant = ["../outputs/backup/VSRVC NAUG 2048/model_30.pth", "../outputs/NQUANT VSRVC NAUG 2048/model_30.pth",
-                   "../outputs/backup/VSRVC AUG 2048/model_30.pth", "../outputs/NQUANT VSRVC AUG 2048/model_30.pth"]
-    # custom_names = ["", "ZK", "AUG", "AUG ZK"]
-    noised = ["../outputs/backup/VSRVC NAUG 2048/model_30.pth", "../outputs/backup/VSRVC AUG 2048/model_30.pth",
-              "../outputs/NOISED SQUANT VSRVC NAUG 2048/model_30.pth"]
-    custom_names = ["NAUG", "AUG", "NOISED NAUG"]
-    srrdr = ["../outputs/backup/VSRVC NAUG 2048/model_30.pth", "../outputs/backup/VSRVC AUG 2048/model_30.pth",
-             "../outputs/SRRDR VCVSR NAUG 2048/model_30.pth", "../outputs/SRRDR VCVSR AUG 2048/model_30.pth"]
-    # custom_names = ["(model NZ)", "(model NZ AUG)", "(model Z)", "(model Z AUG)"]
     only_vc = ["../outputs/backup/VC 128/model_30.pth", "../outputs/backup/VC 512/model_30.pth",
                "../outputs/backup/VC 1024/model_30.pth", "../outputs/backup/VC 2048/model_30.pth"]
-    # custom_names = None
+    only_vsr = ["../outputs/backup/VSR 128/model_30.pth", "../outputs/backup/VSR 512/model_30.pth",
+               "../outputs/backup/VSR 1024/model_30.pth", "../outputs/backup/VSR 2048/model_30.pth"]
 
     # plot_compression_comparison(get_baseline(nquant), get_baseline(augmented), "Model jednozadaniowy (kompresja)", "Model dwuzadaniowy", nframes=12)
-    plot_compression_curve(get_baseline(noised), "database2.json", nframes=12, custom_names=custom_names)
-    plot_compression_curve(get_baseline(noised), "database2.json", custom_names=custom_names)
-    plot_superresolution_table(get_baseline(noised), "database2.json", custom_names=custom_names)
-    # plot_frame_compression_performance(chkpt_roots)
-    # plot_output_files_size(chkpt_roots)
+    plot_charts(reference)
