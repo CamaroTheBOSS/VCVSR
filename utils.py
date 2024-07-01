@@ -44,11 +44,26 @@ def save_frame(filepath: str, frame: torch.Tensor):
         saved_frame.save(filepath, format="JPEG", quality=95)
 
 
-def show_frame(window_name: str, frame: torch.Tensor):
+def show_frame(frame: torch.Tensor):
     indexes = (0,) * (len(frame.shape) - 3) + (slice(None),)
     cv2_frame = np.clip(frame[indexes].detach().cpu().permute(1, 2, 0).numpy() * 255., 0, 255).astype(np.uint8)
-    cv2.imshow(window_name, cv2.cvtColor(cv2_frame, cv2.COLOR_RGB2BGR))
+    cv2.imshow("", cv2.cvtColor(cv2_frame, cv2.COLOR_RGB2BGR))
     cv2.waitKey(0)
+
+
+def show_features(features: torch.Tensor, size: tuple = None, mode="bilinear"):
+    if size is None:
+        size = features.size()[-2:]
+    mean_features = features.mean(dim=1).unsqueeze(1)
+    interpolated = torch.nn.functional.interpolate(mean_features, size=size, mode=mode).squeeze()
+    data_range = interpolated.max() - interpolated.min()
+    if data_range:
+        interpolated = (interpolated - interpolated.min()) / data_range * 255.
+    cv2_frame = np.clip(interpolated.detach().cpu().numpy(), 0, 255).astype(np.uint8)
+    cv2_frame = cv2.cvtColor(cv2_frame, cv2.COLOR_GRAY2BGR)
+    cv2.imshow("", cv2_frame)
+    cv2.waitKey(0)
+
 
 
 def add_dict(first: dict, second: Dict[str, torch.Tensor]):

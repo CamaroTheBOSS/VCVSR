@@ -177,9 +177,27 @@ def eval_estimated_bits(model: nn.Module, dataset, examples: list = None, save_r
         print(estimated_bpp, real_bpp)
 
 
+@torch.no_grad()
+def test_compression(model: nn.Module, dataset: UVGDataset, save_root=None):
+    lqs, hqs = dataset.__getitem__(5)
+    lqs, hqs = lqs.to(model.device).unsqueeze(0), hqs.to(model.device).unsqueeze(0)
+    data_root, bpp, upscaled, coded_data = model.compress(lqs, save_root=save_root, return_data=True)
+    reconstructed, decoded_data = model.decompress(data_root, return_data=True)
+    for key in coded_data.keys():
+        if key == "quantization_info":
+            continue
+        coded = torch.stack(coded_data[key]).squeeze(1)
+        decoded = decoded_data[key]
+        if not torch.equal(coded, decoded):
+            print("Unconsistent compress/decompress data!")
+        else:
+            print("Consistent")
+
+
+
 if __name__ == "__main__":
     # chkpt = "../outputs/baseline_no_aug2048/model_30.pth"
-    chkpt = "../outputs/NQUANT VSRVC AUG 2048/model_30.pth"
+    chkpt = "../outputs/backup/VSRVC NAUG 2048/model_30.pth"
     model = load_model(chkpt)
     model.eval()
     save_root = str(pathlib.Path(chkpt).parent)
@@ -188,7 +206,8 @@ if __name__ == "__main__":
     # draw_model_distributions_deriv(model)
     # eval_estimated_bits(model, uvg, [0], save_root=save_root)
     # eval_upscale_consistency(model, reds, save_root=save_root)
+    test_compression(model, dataset, save_root)
     # eval_compression(model, dataset, [5], save_root=save_root, keyframe_format="jpg")
-    eval_generation(model, dataset, 3, save_root=save_root)
+    # eval_generation(model, dataset, 3, save_root=save_root)
     # eval_replaced_keyframe(model, dataset, r"D:\Code\Datasets\UVG\YachtRide\001.png", [3], save_root=save_root)
     # eval_motion_transfer(model, dataset, 6, 3, save_root)

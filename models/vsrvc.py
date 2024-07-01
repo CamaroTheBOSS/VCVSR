@@ -309,7 +309,7 @@ class VSRVCModel(nn.Module):
         return txt
 
     def compress(self, video: torch.Tensor, save_root: str = "./", keyframe_format="jpg", verbose=False,
-                 aggregate_bpp="mean", folder_name: str = "compressed_data"):
+                 aggregate_bpp="mean", folder_name: str = "compressed_data", return_data=False):
         if save_root is None:
             save_root = "./"
         b, n, c, h, w = video.shape
@@ -390,9 +390,11 @@ class VSRVCModel(nn.Module):
         if aggregate_bpp == "mean":
             size_bpp = np.array(size_bpp).sum()
 
+        if return_data:
+            return output_dir, size_bpp, torch.stack(hqs).squeeze(1).unsqueeze(0), to_code
         return output_dir, size_bpp, torch.stack(hqs).squeeze(1).unsqueeze(0)
 
-    def decompress(self, compressed_root: str):
+    def decompress(self, compressed_root: str, return_data: bool = False):
         pkl_filenames = ["offsets_prior", "offsets_hyperprior", "residuals_prior", "residuals_hyperprior"]
         if self.quant_type in ["qint", "normalized"]:
             pkl_filenames.append("quantization_info")
@@ -412,7 +414,8 @@ class VSRVCModel(nn.Module):
         previous_features = self.feature_extraction(decoded_frames[0])
 
         if self.quant_type == "standard":
-            decoded_data["quantization_info"] = [[[None, None] for i in range(4)] for j in range(decoded_data["offsets_prior"].size(0))]  # for compatibility purposes
+            decoded_data["quantization_info"] = [[[None, None] for i in range(4)] for j in range(
+                decoded_data["offsets_prior"].size(0))]  # for compatibility purposes
         for op, ohp, rp, rhp, q_info in zip(decoded_data["offsets_prior"], decoded_data["offsets_hyperprior"],
                                             decoded_data["residuals_prior"], decoded_data["residuals_hyperprior"],
                                             decoded_data["quantization_info"]):
@@ -430,6 +433,8 @@ class VSRVCModel(nn.Module):
             decoded_frames.append(reconstructed_frame)
             previous_features = self.feature_extraction(reconstructed_frame)
 
+        if return_data:
+            return torch.stack(decoded_frames).squeeze(1).unsqueeze(0), decoded_data
         return torch.stack(decoded_frames).squeeze(1).unsqueeze(0)
 
     def generate_video(self, previous_frame: torch.Tensor, current_frame: torch.Tensor, nframes: int = 6):
@@ -452,13 +457,16 @@ class VSRVCModel(nn.Module):
             mu_residuals, sigma_residuals = self.residual_compressor.bit_estimator.get_mu_sigma(mu_sigmas_residuals)
             offsets_prior.qint = torch.normal(mu_offsets, sigma_offsets)
             offsets_hyperprior.qint = self.motion_compressor.bit_estimator.sample_hyperprior(
-                n_values=offsets_hyperprior.qint.shape[-2] * offsets_hyperprior.qint.shape[-1], low=-25, high=25, precision=3000
+                n_values=offsets_hyperprior.qint.shape[-2] * offsets_hyperprior.qint.shape[-1], low=-25, high=25,
+                precision=3000
             ).reshape(offsets_hyperprior.qint.shape)
             residuals_prior = torch.normal(mu_residuals, sigma_residuals)
             residuals_hyperprior = self.residual_compressor.bit_estimator.sample_hyperprior(
-                n_values=offsets_hyperprior.qint.shape[-2] * offsets_hyperprior.qint.shape[-1], low=-25, high=25, precision=3000
+                n_values=offsets_hyperprior.qint.shape[-2] * offsets_hyperprior.qint.shape[-1], low=-25, high=25,
+                precision=3000
             ).reshape(offsets_hyperprior.qint.shape)
-            residuals_prior = Quantized(residuals_prior, scales=offsets_prior.scales, zero_points=offsets_prior.zero_points)
+            residuals_prior = Quantized(residuals_prior, scales=offsets_prior.scales,
+                                        zero_points=offsets_prior.zero_points)
             residuals_hyperprior = Quantized(residuals_hyperprior, scales=offsets_hyperprior.scales,
                                              zero_points=offsets_hyperprior.zero_points)
             reconstructed_offsets = self.motion_compressor.decompress(offsets_prior, offsets_hyperprior)
@@ -513,6 +521,7 @@ class VSRVCModel(nn.Module):
 
         return torch.stack(decoded_frames).squeeze(1).unsqueeze(0)
 
+
     def forward(self, previous_lqf: torch.Tensor, current_lqf: torch.Tensor, current_hqf: torch.Tensor = None):
         # [SHARED] Get into feature space
         previous_features = self.feature_extraction(previous_lqf)
@@ -561,7 +570,7 @@ class VSRVCModel(nn.Module):
         # [SR branch] Loss function
         loss_vsr = {
             "vsr_recon": self.reconstruction_loss(upscaled_frame,
-                                                             current_hqf) if current_hqf is not None else None,
+                                                  current_hqf) if current_hqf is not None else None,
         }
 
         additional_info = {"count_non_zeros_offsets": count_nonzeros_offsets,

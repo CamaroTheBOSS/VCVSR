@@ -223,8 +223,8 @@ if __name__ == "__main__":
     # checkpoints = ["../outputs/VSRVC AUG 128/model_30.pth", "../outputs/VSRVC AUG 512/model_30.pth",
     #                 "../outputs/VSRVC AUG 1024/model_30.pth", "../outputs/VSRVC AUG 2048/model_30.pth"]
     # change_model_metadata("../outputs/SRRDR VCVSR AUG 2048/model_30.pth")
-    checkpoints = ["../outputs/backup/VSRVC AUG 2048/model_30.pth", "../outputs/SRRDR VCVSR AUG 2048/model_30.pth",
-                   "../outputs/NQUANT VSRVC AUG 2048/model_30.pth", "../outputs/SRRDR NQUANT VSRVC AUG 2048/model_30.pth"]
+    checkpoints = ["../outputs/backup/VSRVC AUG 2048/model_30.pth", "../outputs/backup/VSRVC NAUG 2048/model_30.pth",
+                   "../outputs/NQUANT VSRVC AUG 2048/model_30.pth", "../outputs/NQUANT VSRVC NAUG 2048/model_30.pth"]
 
     compression_mosaic(checkpoints, "ShakeNDry", ncols=3, save_root="../outputs", inter_pad=(5, 2), generate_data=True)
     superresolution_mosaic(checkpoints, "ShakeNDry", ncols=3, save_root="../outputs", inter_pad=(30, 2),
