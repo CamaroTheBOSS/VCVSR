@@ -1,7 +1,24 @@
-import collections
+from dataclasses import dataclass
 
-from itertools import repeat
+import torch
 from torch import nn
+
+
+@dataclass
+class VSRVCOutput:
+    reconstructed: torch.Tensor = None
+    upscaled: torch.Tensor = None
+    loss_vc: dict = None
+    loss_vsr: dict = None
+    loss_shared: dict = None
+    additional_info: dict = None
+
+
+@dataclass
+class Quantized:
+    qint: torch.Tensor
+    scales: torch.Tensor
+    zero_points: torch.Tensor
 
 
 def make_layer(block, num_blocks, **kwarg):

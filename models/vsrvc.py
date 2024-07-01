@@ -14,48 +14,11 @@ from PIL import Image
 from models.basic_blocks import ResidualBlocksWithInputConv, ResidualBlockNoBN
 from dcn.deform_conv import DeformConvPack as DCNv1
 from models.bit_estimators import HyperpriorEntropyCoder
-from models.model_utils import make_layer, count_parameters
+from models.model_utils import make_layer, count_parameters, Quantized, VSRVCOutput
 from models.upscaling_decoder import UpscalingModule
 import gzip
 
 from utils import save_frame
-
-
-@dataclass
-class VSRVCOutput:
-    reconstructed: torch.Tensor = None
-    upscaled: torch.Tensor = None
-    loss_vc: dict = None
-    loss_vsr: dict = None
-    loss_shared: dict = None
-    additional_info: dict = None
-
-
-@dataclass
-class Quantized:
-    qint: torch.Tensor
-    scales: torch.Tensor
-    zero_points: torch.Tensor
-
-
-def load_model(chkpt_path: str = None, name: str = "VSRVC", rdr: int = 128, vc: bool = True, vsr: bool = True,
-               quant_type: str = "standard"):
-    if chkpt_path is None:
-        return VSRVCModel(name, rdr, vc, vsr, quant_type)
-    saved_model = torch.load(chkpt_path)
-    if "rate_distortion_ratio" in saved_model.keys():
-        rdr = saved_model["rate_distortion_ratio"]
-    if "model_name" in saved_model.keys():
-        name = saved_model["model_name"]
-    if "vc" in saved_model.keys():
-        vc = saved_model["vc"]
-    if "vsr" in saved_model.keys():
-        vsr = saved_model["vsr"]
-    if "quant_type" in saved_model.keys():
-        quant_type = saved_model["quant_type"]
-    model = VSRVCModel(name, rdr, vc, vsr, quant_type)
-    model.load_state_dict(saved_model['model_state_dict'])
-    return model
 
 
 class MotionEstimator(nn.Module):
@@ -64,20 +27,12 @@ class MotionEstimator(nn.Module):
         self.offset_conv1 = nn.Conv2d(2 * in_channels, out_channels, 3, 1, 1, bias=True)
         self.offset_conv2 = nn.Conv2d(out_channels, out_channels, 3, 1, 1, bias=True)
         self.lrelu = nn.LeakyReLU(negative_slope=0.1)
-        # self.scale_offsets = True
 
     def forward(self, previous_features: torch.Tensor, current_features: torch.Tensor):
         offsets = torch.cat([previous_features, current_features], dim=1)
         offsets = self.lrelu(self.offset_conv1(offsets))
         offsets = self.lrelu(self.offset_conv2(offsets))
         return offsets
-    #     offsets = self.scale(offsets, 2)
-    #     return offsets
-    #
-    # def scale(self, offsets: torch.Tensor, scalar: float):
-    #     if offsets.max() < scalar and self.scale_offsets:
-    #         offsets = offsets * scalar / offsets.max()
-    #     return offsets
 
 
 def qint_to_float(x: torch.Tensor):

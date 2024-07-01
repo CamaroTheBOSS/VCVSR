@@ -11,10 +11,9 @@ import torch
 from torchvision.transforms import ToTensor
 
 from datasets import UVGDataset
-from evaluation.full_evaluation import change_model_metadata
 from evaluation.test import eval_compression
-from models.vsrvc import load_model
 from utils import interpolate_video
+from models.load_model import load_model
 
 
 def _read_data(chkpt_paths: List[str], dataset: UVGDataset, index: int, indexes: torch.Tensor):

@@ -4,7 +4,7 @@ import math
 import warnings
 from collections import defaultdict, deque
 from datetime import timedelta, datetime
-from typing import Dict, Tuple
+from typing import Tuple
 
 import logging
 import shutil
@@ -17,7 +17,6 @@ from torch.optim.lr_scheduler import LRScheduler
 import wandb
 import time
 import os
-
 
 def save_video(video: torch.Tensor, root: str, name: str = "vid") -> None:
     path = os.path.join(root, name)

@@ -11,9 +11,9 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from datasets import Vimeo90k, UVGDataset
 from evaluation.full_evaluation import test_uvg
-from models.vsrvc import load_model
 from utils import (init_run_dir, MetricLogger, FileLogger, log_to_wandb, save_video, MyCosineAnnealingLR,
                    add_dictionaries)
+from models.load_model import load_model
 from metrics import psnr, ssim
 
 
@@ -91,10 +91,11 @@ def main(rdr):
     epochs = 30
     checkpoint = 5
     rate_distortion = rdr
+    model_type = "VSRVCNoAlignment"
     vsr = True
     vc = True
     checkpoint_path = None
-    wandb_enabled = True
+    wandb_enabled = False
     run_name = f"{'VSR' if vsr else ''}{'VC' if vc else ''} {rate_distortion}"
     run_description = f"VSRVC augmented bez RDR dla SR"
     if wandb_enabled:
@@ -111,7 +112,7 @@ def main(rdr):
     train_dataloader = DataLoader(train_set, batch_size=batch, shuffle=True, drop_last=True)
     test_dataloader = DataLoader(test_set, batch_size=batch, shuffle=False, drop_last=True)
 
-    model = load_model(checkpoint_path, run_name, rate_distortion, vc, vsr)
+    model = load_model(checkpoint_path, run_name, rate_distortion, vc, vsr, model_type=model_type)
     logger.log(model.summary())
     optimizer = AdamW(model.parameters(), lr=lr)
     lr_scheduler = MyCosineAnnealingLR(optimizer, epochs * len(train_dataloader), 0.01 * lr, starting_point=0.5)

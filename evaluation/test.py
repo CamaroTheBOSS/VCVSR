@@ -13,9 +13,9 @@ from torchvision.transforms import ToTensor
 
 from datasets import Vimeo90k, UVGDataset
 from metrics import psnr, ssim
-from models.vsrvc import load_model
 from PIL import Image
 from utils import save_video, dict_to_string, save_frame
+from models.load_model import load_model
 import matplotlib.pyplot as plt
 
 

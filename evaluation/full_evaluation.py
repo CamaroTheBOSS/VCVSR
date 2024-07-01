@@ -10,7 +10,8 @@ import pandas as pd
 
 from datasets import UVGDataset
 from evaluation.ffmpeg import get_psnr_ssim_tensor_input
-from models.vsrvc import VSRVCModel, load_model
+from models.vsrvc import VSRVCModel
+from models.load_model import load_model
 from evaluation.prepare_uvg import get_keywords
 
 """
